@@ -380,3 +380,28 @@ AI 還能徹底終結「文件永遠過期」的歷史頑疾。AI 能夠直接�
 * Amazon Web Services, Amazon Bedrock Documentation: [https://docs.aws.amazon.com/bedrock/](https://docs.aws.amazon.com/bedrock/)
 * LangChain, LangGraph Documentation: [https://langchain-ai.github.io/langgraph/](https://langchain-ai.github.io/langgraph/)
 * 本書專屬配套原始碼儲存庫: [https://github.com/PacktPublishing/AI-Driven-Platform-Engineering](https://github.com/PacktPublishing/AI-Driven-Platform-Engineering)
+# 讀者筆記：從從業者視角看第 3 章
+
+> **「不要用微調（Fine-tuning）的大砲去打提示詞（Prompt）能解決的蒼蠅。」**
+
+### 💡 讀者思維：工程師的技術選型克制力
+這一章是全書最具「工程理性」的章節之一。面對 LLM 的技術狂潮，許多架構師的第一反應往往是「我們要不要租幾張 H100 來微調自己的維運大模型？」作者用極其清晰的決策光譜打破了這個迷思：在平台工程中，**提示工程（Prompting）與檢索增強生成（RAG）覆蓋了 90% 的真實需求，而模型上下文協議（MCP）則是串接真實世界的關鍵神經網絡**。唯有當你需要教模型全新的語法或專屬編碼風格時，才考慮微調。
+
+### 🎯 核心精華萃取
+1. **黃金三角鐵律**：
+   - **LLM** = 推理大腦（具備常識與邏輯，但不了解你的內網環境）。
+   - **RAG** = 靜態外部記憶（將內部規範、事故覆盤與架構圖精準餵給大腦）。
+   - **MCP** = 雙手與感官（透過標準化介面，讓大腦能即時讀取日誌與執行安全動作）。
+2. **決策四象限尺規**：
+   - 需求變動快 + 依賴專屬事實 ➜ **RAG**
+   - 任務結構固定 + 需調用既有 API ➜ **MCP 工具增強**
+   - 領域特定專有語法 + 追求極致延遲 ➜ **模型微調**
+3. **多代理（Multi-agent）不是銀彈**：單一具備明確系統提示與工具集的代理，其穩定度與成本往往遠勝過複雜的多代理網狀協同。非必要切勿過早引入多代理編排。
+
+### ⚠️ 實務踩坑警報
+* **盲目追逐模型參數量**：在平台維運場景中，一個延遲低、具備良好上下文窗口與工具調用（Function Calling）能力的輕量模型，實戰價值遠高於昂貴且笨重的超大模型。
+* **忽視 Token 預算與遞迴陷阱**：在代理工作流中沒有設定嚴格的 `max_iterations` 或遞迴上限，一旦代理陷入推理死循環，帳單將以驚人速度燃燒。
+
+### 🛠️ 明日行動清單
+* [ ] 在團隊內部畫出「提示詞 -> RAG -> MCP -> 代理 -> 微調」的階梯圖，作為未來所有 GenAI 專案立項時的強制評估規範。
+* [ ] 挑選一個內部最常被詢問的維運場景（例如「如何申請資料庫連線」），嘗試用精準的 System Prompt 與 Context 解決，驗證其效果極限。

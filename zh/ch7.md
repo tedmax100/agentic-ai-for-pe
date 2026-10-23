@@ -337,3 +337,30 @@ Kubernetes 立即調度啟動了一個全新 Pod，但由於 PVC 的存在，`ME
 * Melvin E. Conway，《*How Do Committees Invent?*》（Datamation，1968 年 4 月）。關於系統設計中組織結構鏡像反射的經典開山之作。
 * 關於 2025 年 7 月 Replit / SaaStr 的重大事故，參見 Sharon Goldman，《*AI-powered coding tool wiped out a software company's database in 'catastrophic failure'*》，Fortune，2025 年 7 月 23 日，[https://fortune.com/2025/07/23/ai-coding-tool-replit-wiped-database-called-it-a-catastrophic-failure/](https://fortune.com/2025/07/23/ai-coding-tool-replit-wiped-database-called-it-a-catastrophic-failure/)；以及 Simon Sharwood，《*Vibe coding service Replit deleted production database*》，The Register，2025 年 7 月 21 日，[https://www.theregister.com/2025/07/21/replitsaastrvibecodingincident/](https://www.theregister.com/2025/07/21/replitsaastrvibecodingincident/)。關於 2026 年 4 月 PocketOS / Cursor / Railway 刪庫慘劇（包含代理對自身刪庫行為的自白復盤報告），參見 Thomas Claburn，《*Cursor-Opus agent snuffs out startup's production database*》，The Register，2026 年 4 月 27 日，[https://www.theregister.com/2026/04/27/cursoropusagentsnuffsoutpocketos/](https://www.theregister.com/2026/04/27/cursoropusagentsnuffsoutpocketos/)；以及 AI 事故資料庫 Incident 1469，[https://incidentdatabase.ai/cite/1469/](https://incidentdatabase.ai/cite/1469/)。
 * L. Alves Duarte 與 S. Vennam，《*Streamline Amazon EKS operations with Agentic AI*》（CNS421），AWS re:Invent 2025，2025 年 12 月。該會議展示了基於 Strands SDK 構建的多代理系統，利用 EKS 託管的模型上下文協議（MCP）執行叢集維運。
+# 讀者筆記：從從業者視角看第 7 章
+
+> **「康威定律在 AI 時代依然適用：千萬不要試圖建立一個中央全能的大一統代理。」**
+
+### 💡 讀者思維：專精代理拓撲與平台就緒度檢驗
+第七章是整本書實戰含金量最高的核心之一。作者提出了靈魂拷問：「我們的平台真的準備好以機器速度被消費了嗎？」當初為了人類工程師設計的介面，換成每秒調用幾百次的 AI 代理時，會瞬間暴露出可觀測性匱乏、缺乏等冪性以及權限混亂等致命傷。解決方案不是退縮，而是**以康威定律為指引，將全能單體代理拆解為專精代理拓撲（Specialized Agent Topology）**——監控團隊管監控代理、網路團隊管網路代理，透過身分透傳與受控 GitOps 流水線優雅協同。
+
+### 🎯 核心精華萃取
+1. **平台代理就緒度四大硬指標**：
+   - **介面成熟度**：API 是否結構化、有型別定義且回傳機器友好的錯誤代碼？
+   - **機器速度下的可觀測性**：調用鏈路能否承受每分鐘上千次躍點，並攜帶全局 Correlation ID？
+   - **身分透傳（Identity Propagation）**：平台能否確切回答「代理的每一次點擊究竟代表哪位真實使用者」？
+   - **等冪性與受限爆炸半徑**：寫入操作是否強制要求 Idempotency Key？破壞性變更是否有 Dry-run 模擬？
+2. **專精代理對齊業務領域所有權**：
+   - 調度協同代理（Coordinator）：只負責釐清意圖、拆解任務與委派。
+   - 領域專精代理（Diagnostics、GitOps PR）：只握有該領域最小必要工具，由該領域專家親自維護。
+3. **雙層審計日誌與鏈路追蹤**：
+   - Langfuse/OTel 負責模型維度的鏈路追蹤（Prompt、Token、延遲）。
+   - 本地雜湊鏈（Hash-chained Audit Log）或 S3 Object Lock 負責法律與合規級別的不可否認性審計。
+
+### ⚠️ 實務踩坑警報
+* **「代理即使用者」的權限偷懶做法**：建立一個名為 `ai-agent` 的超級帳號讓它做所有事，這會徹底摧毀整個組織的審計追蹤軌跡，違反所有金融與企業合規準則。
+* **忽略上下文膨脹（Context Bloat）**：把 50 個工具的描述全塞進單一代理的提示詞裡，不僅浪費大量 Token，還會導致模型在選擇工具時嚴重幻覺與誤判。
+
+### 🛠️ 明日行動清單
+* [ ] 拿「就緒度四大特質」自我檢視公司的內部 API：如果明天有一個自主代理開始調用，我們的 API 會不會因為缺乏等冪性或被限流而崩潰？
+* [ ] 在本地端把玩本書的第 7 章配套儲存庫，親身體驗 `AlwaysPRHook` 是如何在底層硬生生攔截未經許可的直寫操作。

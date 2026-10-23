@@ -504,3 +504,24 @@ MCP 僅僅是 AI 系統從「單體孤立模型」邁向「分散式協同代理
 * IBM, *Agent Communication Protocol (ACP)*: [https://agentcommunicationprotocol.dev](https://agentcommunicationprotocol.dev/)
 * Surapaneni, R. et al., *A Survey of Agent Interoperability Protocols: MCP, ACP, A2A, and ANP*: [https://arxiv.org/abs/2505.02279](https://arxiv.org/abs/2505.02279)
 * 本書專屬配套原始碼儲存庫，*[第 4 章](https://learning.oreilly.com/library/view/agentic-ai-for/9781806386659/Chapter_4.xhtml#h1_79)*: [https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04](https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04)
+# 讀者筆記：從從業者視角看第 4 章
+
+> **「軟體工程中最昂貴的浪費，莫過於資深工程師的腦內記憶，隨著他們的離職而灰飛煙滅。」**
+
+### 💡 讀者思維：把散落的部落知識轉化為機器的活體記憶
+每個工程團隊都有類似的現象：遇到怪異的部署錯誤時，大家的第一反應不是翻文件，而是在 Slack 頻道標註某位資深前輩：「請問上次遇到這個錯誤代碼是怎麼解的？」第四章的核心價值在於**將這種隨機脆弱的「部落記憶（Tribal Knowledge）」轉化為可索引、可版本化、能被 AI 高效消費的「組織活體資產」**。但請記住：RAG 不是把整顆硬碟丟進向量資料庫，真正的功夫全在於切塊（Chunking）、元數據（Metadata）標註與檢索邊界。
+
+### 🎯 核心精華萃取
+1. **動態維運上下文 vs. 長效組織知識**：
+   - 即時狀態（Pod 崩潰、CPU 飆高）屬於**瞬態上下文**，交由 MCP 即時查詢。
+   - 事後覆盤報告、黃金路徑規範、災難復原演練手冊屬於**長效知識**，交由 RAG 切塊索引。
+2. **切塊（Chunking）決定了 RAG 的生死**：按固定長度無腦切塊會撕裂語意脈絡；針對技術文件，務必按 Markdown 標題層級或架構模組進行語意切塊，並附帶路徑元數據。
+3. **身分感知檢索（Identity-Aware Retrieval）**：不能讓實習生的查詢檢索到財務系統或安全金鑰的維運手冊；RAG 檢索層必須在 Vector Store 端即落實 ACL 權限過濾。
+
+### ⚠️ 實務踩坑警報
+* **「知識沼澤」陷阱**：把 5 年前已經廢棄的 Confluence 文件一股腦倒進向量庫，AI 會非常熱心地給出過期的操作指令，引導工程師走向災難。
+* **忘記冷啟動與同步閉環**：建立知識庫只完成了 30% 的工作，若沒有將 GitOps PR 或 Confluence 更新自動觸發重新嵌入的機制，這座知識庫在 3 個月後就會死亡。
+
+### 🛠️ 明日行動清單
+* [ ] 盤點團隊最近 3 次重大事故的覆盤報告（Post-mortem），將其格式結構化（現象、根因、復原步驟、預防措施），建立起標準知識模板。
+* [ ] 在本地端使用本書配套實驗的 FastEmbed + pgvector 體驗一次最精簡的檢索流程，體會語意檢索與關鍵字搜尋的本質差異。

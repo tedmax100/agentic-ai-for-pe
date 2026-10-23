@@ -228,3 +228,28 @@
 * NIST AI 600-1，《*Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile*》（2024 年），關於生成式 AI 系統架構治理、效能評估與風險管理的權威指南：[https://doi.org/10.6028/NIST.AI.600-1](https://doi.org/10.6028/NIST.AI.600-1)
 * OWASP GenAI 安全專案，《*LLM01:2025 Prompt Injection*》，詳解提示詞注入的最新攻防實踐：[https://genai.owasp.org/llmrisk/llm01-prompt-injection/](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
 * OWASP 代理式應用程式十大安全威脅 2026 年版（*OWASP Top 10 for Agentic Applications 2026*），剖析自主代理系統的核心安全風險與防禦控制：[https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
+# 讀者筆記：從從業者視角看第 9 章
+
+> **「工程師的角色不會消亡，但從此不再是親手砌磚的工匠，而是指揮智慧工兵艦隊的總指揮官。」**
+
+### 💡 讀者思維：從 DevEx（開發者體驗）擴展至 AX（代理體驗）
+第九章為全書拉開了最宏偉的未來帷幕。作者沒有落入科幻式的廉價狂熱，而是以冷靜的工程透鏡給出了清晰演進脈絡：從孤立單體邁向受監督的協同艦隊，再邁向由「代理線束（Agentic Harness）」編排的自適應生命週期。在此背景下，平台團隊的職責迎來了歷史性的升級：**我們不僅僅是在為人類打造開發者體驗（DevEx），我們正在親手設計『代理體驗（Agent Experience, AX）』**——當系統中一半的勞動力是自主代理時，誰能讓正確安全的動作同時成為機器阻力最小的動作，誰就能在未來十年佔據絕對的工程制高點。
+
+### 🎯 核心精華萃取
+1. **代理框架線束（Agentic Harness）哲學**：
+   - 代理本身是可替換的消耗品；真正長久沈澱的是外圍的線束：標準測試套件、嚴密治理規則、規格拆解機制與上下文提供通道。
+   - 「先做原型、後補規格」成為敏捷新常態，原型建構變得比撰寫架構提案文件更加廉價。
+2. **知識市場的「檸檬市場（Lemon Market）」警訊**：
+   - 未來將出現可自由下載的「代理技能與數位大腦」，但也必然伴隨著惡意記憶投毒與軟體供應鏈攻擊。
+   - 企業必須像檢驗 Docker 映像檔和 npm 套件一樣，對外部引入的代理記憶與技能實施嚴格簽名與沙箱掃描。
+3. **活體記憶圖譜（Living Memory Graph）**：
+   - 跨越孤立的關鍵字或純向量檢索，將全書/全組織的架構節點、決策因果、緩解策略繪製為拓撲圖譜。
+   - 透過 MCP 暴露圖遍歷運算（neighbors, search_memory），賦予代理推導因果關聯的結構化思考能力。
+
+### ⚠️ 實務踩坑警報
+* **誤入「單人十億獨角獸」的空想**：忽視組織協同與實體約束，盲目裁減基礎工程能力；記住，沒有現代化的穩健基礎架構，再強的代理也只是空中樓閣。
+* **將「規格定義」視為可省略的環節**：代理越強大，事前對「何謂真正完成（Definition of Done）」的結構化驗收條件定義就越生死攸關。
+
+### 🛠️ 明日行動清單
+* [ ] 下載並啟動本書配套儲存庫的第 9 章 MCP 活體記憶圖譜伺服器，體驗用圖結構查詢知識與純文字檢索的巨大維度差距。
+* [ ] 思考一個問題：如果半年後你的團隊加入 3 位全天候運行的 AI 程式設計與維運代理，你現有的 Git 分支策略與 CI 測試流水線能否承受這種機器速度的衝擊？
