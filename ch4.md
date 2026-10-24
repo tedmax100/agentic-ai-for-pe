@@ -471,108 +471,175 @@ The same incident illustrates two different jobs: RAG explains how this class of
 
 Practical reference: step-by-step instructions for building all three labs, including the knowledge corpus, the local RAG pipeline, and the MCP server, are in the book's companion repository at [https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04](https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04).
 
-> 💡 **Reader's Hands-on Lab Note: Comprehensive File Breakdown & "Online Incident Investigation" Walkthrough**
-> 
-> The companion repository may appear to contain an arbitrary collection of Markdown and Python files, but **they actually form a carefully scripted production incident investigation!**
-> 
-> Here is a complete breakdown of what each file does, what is inside it, and how they connect into a cohesive feedback loop:
-> 
-> ---
-> 
-> ### 🎭 Cast of Files (The Investigation Scenario)
-> 
-> ```
-> 💥 1. Inject Incident (broken-app.yaml)
->        Simulates a payment-processor failing DB connection on boot and crashing (exit 1)
->                         ↓
-> 🔍 2. Live Inspection via MCP (k8s.py → server.py → client_demo.py)
->        Queries the cluster live: "What is failing?" → Detects CrashLoopBackOff (owner: payments-team)
->                         ↓
-> 📚 3. Consult Wisdom via RAG (ingest.py → pgvector → store.py → api.py)
->        Searches vector store for CrashLoopBackOff → Retrieves SOP runbooks & past postmortems
->                         ↓
-> 💡 4. Root Cause & Remediation (crashloopbackoff.md + 2026-03 postmortem)
->        Recommends `kubectl logs --previous` and identifies past NetworkPolicy blocker
-> ```
-> 
-> ---
-> 
-> ### 📁 1. The Knowledge Corpus (`chapter-04/1-knowledge-corpus/corpus/`)
-> Rather than arbitrary docs, each file plays an intentional operational role:
-> 
-> 1. **`runbooks/crashloopbackoff.md` (Operational Runbook — Standard SOP):**
->    * **Purpose:** The platform team's standard operating procedure for pod restarts.
->    * **Key contents:** Highlights that *"`CrashLoopBackOff` is not a root cause—it's Kubernetes telling you the container keeps exiting."* Recommends the golden command: `kubectl logs <pod> --previous` (reading logs of the crashed container), and lists the top 5 causes (config errors, DB connection failures, OOMKilled, probe failures, missing dependencies).
-> 2. **`postmortems/2026-03-payment-processor-outage.md` (Incident Postmortem — Institutional Memory):**
->    * **Purpose:** Documents a real SEV2 production outage on March 16, 2026.
->    * **The story:** `payment-processor` crashed for 42 minutes because a NetworkPolicy change accidentally blocked egress to the database. The app exited on boot when the DB timed out.
->    * **Key takeaway:** Action item specifies: "When CrashLoopBackOff occurs, verify recent NetworkPolicy rollouts."
-> 3. **`blueprints/standard-service.md` & `tagging-and-labels.md` (Architecture Standards):**
->    * **Purpose:** Mandates deployment templates and required metadata labels (e.g. `owner: payments-team`).
->    * **Why it matters:** Because labels are standardized, the MCP server can automatically identify the team responsible for an unhealthy pod.
-> 
-> ---
-> 
-> ### ⚙️ 2. The RAG Pipeline (`files/rag/`)
-> 
-> 1. **`files/pgvector/pgvector.yaml`:** Deploys PostgreSQL 16 with the `pgvector` extension to K8s, exposed on NodePort `localhost:30900`.
-> 2. **`app/ingest.py` (Ingestion Pipeline):**
->    * Parses frontmatter metadata (`type`, `title`, `owner`) from the 6 Markdown files.
->    * Splits text into 18 overlapping chunks (~900 characters with 150-char overlap).
->    * Generates 384-dimensional vector embeddings locally using CPU model `BAAI/bge-small-en-v1.5` and stores them in pgvector.
-> 3. **`app/store.py` (Vector Search):** Implements cosine similarity search (`<=>`) over vector columns.
-> 4. **`app/api.py` (FastAPI Service):** Exposes `/ask`. Embeds user questions and retrieves top-k matching chunks with similarity scores.
-> 
-> ---
-> 
-> ### 🛰️ 3. Live Cluster MCP Server (`files/mcp/`)
-> 
-> 1. **`files/broken-app.yaml` (Deliberate Incident Trigger):**
->    * Uses container command: `["sh", "-c", "echo 'connecting to database...'; sleep 2; echo 'connection timed out'; exit 1"]`.
->    * **Directly mimics the March 2026 outage!** Exiting with status 1 causes Kubernetes to put it into `CrashLoopBackOff`.
-> 2. **`app/k8s.py` (Cluster Observer):** Queries live Kubernetes API via the Python SDK, reading container waiting reasons (`CrashLoopBackOff`) from pod statuses.
-> 3. **`app/server.py` (FastMCP Server):** Exposes `list_deployments` as an MCP tool over stdio transport.
-> 4. **`client_demo.py` (Simulated AI Client):** Connects to `server.py` over stdio, performs tool discovery (`ListToolsRequest`), and invokes `list_deployments(only_unhealthy=False)`.
-> 
-> ---
-> 
-> ### 🔬 4. Real Experimental Results: The Combined Power
-> 
-> When executed on the local `kind` cluster:
-> 
-> #### A. MCP captures live ground truth:
-> Running `.venv/bin/python client_demo.py --unhealthy` returns:
-> ```json
-> {
->   "namespace": "broken-demo",
->   "name": "payment-processor",
->   "desired": 1,
->   "ready": 0,
->   "available": 0,
->   "healthy": false,
->   "owner": "payments-team",
->   "pod_reasons": ["CrashLoopBackOff", "Error"]
-> }
-> ```
-> * **Finding:** MCP identifies *in real time* that `payment-processor` owned by `payments-team` is currently crash-looping.
-> 
-> #### B. RAG consults institutional knowledge:
-> Querying `/ask` with `"Why does a pod end up in CrashLoopBackOff and how do I fix it?"`:
-> ```bash
-> curl -s -X POST http://127.0.0.1:8088/ask -H 'Content-Type: application/json' \
->   -d '{"question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?"}' | jq .
-> ```
-> **Retrieved Sources:**
+## 💡 Reader's Hands-on Lab Note: Comprehensive File Breakdown & "Online Incident Investigation" Walkthrough
+
+The companion repository may appear to contain an arbitrary collection of Markdown and Python files, but **they actually form a carefully scripted production incident investigation!**
+
+Here is a complete breakdown of what each file does, what is inside it, and how they connect into a cohesive feedback loop:
+
+### 🎭 Cast of Files (The Investigation Scenario)
+
+```text
+💥 1. Inject Incident (broken-app.yaml)
+       Simulates a payment-processor failing DB connection on boot and crashing (exit 1)
+                        ↓
+🔍 2. Live Inspection via MCP (k8s.py → server.py → client_demo.py)
+       Queries the cluster live: "What is failing?" → Detects CrashLoopBackOff (owner: payments-team)
+                        ↓
+📚 3. Consult Wisdom via RAG (ingest.py → pgvector → store.py → api.py)
+       Searches vector store for CrashLoopBackOff → Retrieves SOP runbooks & past postmortems
+                        ↓
+💡 4. Root Cause & Remediation (crashloopbackoff.md + 2026-03 postmortem)
+       Recommends `kubectl logs --previous` and identifies past NetworkPolicy blocker
+```
+
+---
+
+### 📁 1. The Knowledge Corpus (`chapter-04/1-knowledge-corpus/corpus/`)
+
+Rather than arbitrary docs, each file plays an intentional operational role:
+
+#### A. Operational Runbooks: `runbooks/crashloopbackoff.md`
+The platform team's standard operating procedure (SOP) for pod restarts.
+
+* **Key Quote:** *"`CrashLoopBackOff` is not a root cause—it's Kubernetes telling you the container keeps exiting. Your job is to find why it exits."*
+* **Golden Command:** Inspect logs from the previous crashed container:
+
+```bash
+kubectl logs <pod> -n <namespace> --previous
+```
+
+* **Top 5 Causes:** Config errors, DB connection timeouts, OOMKilled, probe failures, and missing dependencies.
+
+#### B. Incident Postmortems: `postmortems/2026-03-payment-processor-outage.md`
+Documents a real SEV2 production outage on March 16, 2026.
+
+* **The story:** `payment-processor` crashed for 42 minutes because a NetworkPolicy change accidentally blocked egress to the database. The app exited on boot when the DB connection timed out.
+* **Key takeaway:** Action item specifies: *"When CrashLoopBackOff occurs, verify recent NetworkPolicy rollouts."*
+
+#### C. Architecture Standards: `blueprints/standard-service.md` & `tagging-and-labels.md`
+Mandates deployment templates and required metadata labels.
+
+* **Standardized Metadata Labels Example:**
+
+```yaml
+labels:
+  app.kubernetes.io/name: payment-processor
+  owner: payments-team
+  environment: production
+```
+
+* **Why it matters:** Because labels are standardized, the MCP server can automatically identify the team responsible for an unhealthy pod.
+
+---
+
+### ⚙️ 2. The RAG Pipeline (`files/rag/`)
+
+| File Path | Role | Description |
+|---|---|---|
+| **`files/pgvector/pgvector.yaml`** | Vector Store Deployment | Deploys PostgreSQL 16 with the `pgvector` extension to K8s, exposed on NodePort `localhost:30900`. |
+| **`app/ingest.py`** | Ingestion Pipeline | Parses YAML frontmatter from 6 Markdown files, splits text into 18 overlapping chunks (~900 chars, 150-char overlap), embeds them using local CPU model `BAAI/bge-small-en-v1.5` (dim 384), and writes to pgvector. |
+| **`app/store.py`** | Vector Search | Implements cosine distance search (`<=>`) in pgvector. |
+| **`app/api.py`** | FastAPI Endpoint | Exposes `/ask`. Embeds user queries and retrieves top-k matching chunks with similarity scores. |
+
+---
+
+### 🛰️ 3. Live Cluster MCP Server (`files/mcp/`)
+
+#### A. Incident Trigger: `files/broken-app.yaml`
+Uses container command:
+```yaml
+command: ["sh", "-c", "echo 'connecting to database...'; sleep 2; echo 'connection timed out'; exit 1"]
+```
+**Directly mimics the March 2026 outage!** Exiting with status 1 causes Kubernetes to put it into `CrashLoopBackOff`.
+
+#### B. Cluster Observer: `app/k8s.py`
+Queries live Kubernetes API via the Python SDK, reading container waiting reasons (`CrashLoopBackOff`) from pod statuses.
+
+#### C. FastMCP Server: `app/server.py`
+Exposes `list_deployments` as an MCP tool over stdio transport:
+```python
+@mcp.tool()
+def list_deployments(namespace: Optional[str] = None, only_unhealthy: bool = False) -> list[dict]:
+    """List Kubernetes deployments and their live health."""
+    return k8s.list_deployments(namespace=namespace, only_unhealthy=only_unhealthy)
+```
+
+#### D. Simulated AI Client: `client_demo.py`
+Connects to `server.py` over stdio, performs tool discovery (`ListToolsRequest`), and invokes `list_deployments(only_unhealthy=False)`.
+
+---
+
+### 🔬 4. Real Experimental Results: The Combined Power
+
+When executed on the local `kind` cluster:
+
+#### Step 1: MCP captures live ground truth
+Running:
+```bash
+cd chapter-04/3-mcp-server/files/mcp
+.venv/bin/python client_demo.py --unhealthy
+```
+
+Returns structured JSON from the live cluster:
+```json
+{
+  "namespace": "broken-demo",
+  "name": "payment-processor",
+  "desired": 1,
+  "ready": 0,
+  "available": 0,
+  "healthy": false,
+  "owner": "payments-team",
+  "pod_reasons": [
+    "CrashLoopBackOff",
+    "Error"
+  ]
+}
+```
+> **Finding:** MCP identifies *in real time* that `payment-processor` owned by `payments-team` is currently crash-looping.
+
+#### Step 2: RAG consults institutional knowledge
+Querying `/ask` with `"Why does a pod end up in CrashLoopBackOff and how do I fix it?"`:
+```bash
+curl -s -X POST http://127.0.0.1:8088/ask -H 'Content-Type: application/json' \
+  -d '{"question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?"}' | jq .
+```
+
+Vector retrieval result:
+```json
+{
+  "question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?",
+  "sources": [
+    {
+      "source": "runbooks/crashloopbackoff.md",
+      "doc_type": "runbook",
+      "title": "Diagnosing and fixing CrashLoopBackOff",
+      "owner": "platform-team",
+      "score": 0.827
+    },
+    {
+      "source": "postmortems/2026-03-payment-processor-outage.md",
+      "doc_type": "postmortem",
+      "title": "payment-processor CrashLoopBackOff after network-policy change",
+      "owner": "payments-team",
+      "score": 0.759
+    }
+  ]
+}
+```
+> **Insight:**
 > 1. Match 1 (score 0.827): `runbooks/crashloopbackoff.md` (recommends checking `kubectl logs --previous`).
 > 2. Match 2 (score 0.759): `postmortems/2026-03-payment-processor-outage.md` (reveals past outage was caused by NetworkPolicy blocking DB egress).
-> 
-> ---
-> 
-> ### 💡 Summary: Why MCP + RAG is Essential for Platform Engineering
-> Without **MCP**, AI has no visibility into what is failing right now in production.
-> Without **RAG**, AI cannot connect live symptoms to team runbooks, past incident postmortems, or architecture standards.
-> 
-> **MCP provides the real-time eyes; RAG provides the organizational brain.** Together, they enable the autonomous operational agents built in Chapter 7.
+
+---
+
+### 💡 Summary: Why MCP + RAG is Essential for Platform Engineering
+
+- Without **MCP**, AI has no visibility into what is failing right now in production.
+- Without **RAG**, AI cannot connect live symptoms to team runbooks, past incident postmortems, or architecture standards.
+
+**MCP provides the real-time eyes; RAG provides the organizational brain.** Together, they enable the autonomous operational agents built in Chapter 7.
 
 
 ## Beyond MCP: the emerging agent-protocol landscape

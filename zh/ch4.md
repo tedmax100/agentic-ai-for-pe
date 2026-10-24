@@ -476,121 +476,175 @@ RAG 產出的解答應當明確標註出所引用的來源文件，並在具備�
 
 實務指引：搭建全部三大實驗（涵蓋知識語料庫建立、本地 RAG 管線組裝與 MCP 伺服器部署）的一步一腳印詳盡操作手冊，請完整參閱本書官方配套 GitHub 儲存庫：[https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04](https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04)。
 
-> 💡 **讀者實戰筆記：Chapter 4 實驗檔案全解析與「線上事故偵探」破案實戰全流程**
-> 
-> 在這個實驗中，官方儲存庫看似散落了一堆 Markdown 文件與 Python 檔案，**但其實背後是一齣精心設計的「線上維運事故與 AI 破案」劇本！** 
-> 
-> 為了讓讀者不再對這些檔案感到抽象，以下把各個檔案的**真實角色、內部關鍵內容、以及彼此如何串聯成閉環**做全景拆解：
-> 
-> ---
-> 
-> ### 🎭 登場檔案的角色全景圖（劇本拆解）
-> 
-> ```
-> 💥 1. 現場製造事故 (broken-app.yaml)
->        模擬真實事故：啟動時連不上 DB 逾時崩潰 (exit 1)
->                         ↓
-> 🔍 2. 活體偵測現場 (MCP 工具鏈: k8s.py → server.py → client_demo.py)
->        即時查出「誰壞了？壞在哪？錯誤原因？」→ 抓到 CrashLoopBackOff (owner: payments-team)
->                         ↓
-> 📚 3. 調閱歷史智慧 (RAG 管線: ingest.py → pgvector → store.py → api.py)
->        拿著 CrashLoopBackOff 關鍵字檢索知識庫，挖出歷史手冊與復盤報告
->                         ↓
-> 💡 4. 破案與修復指引 (知識庫檔案: crashloopbackoff.md + 2026-03 事故報告)
->        提供標準排查指令 (kubectl logs --previous) 與事故根因 (NetworkPolicy 阻擋)
-> ```
-> 
-> ---
-> 
-> ### 📁 一、 知識庫語料庫（Corpus）：這些 Markdown 到底寫了什麼？
-> 位於 `chapter-04/1-knowledge-corpus/corpus/`，這些文件並非隨機文字，而是嚴格扮演三種工程角色：
-> 
-> 1. **`runbooks/crashloopbackoff.md`（排障手冊 - 應急 SOP 指南）**
->    * **它在幹嘛：** 平台團隊寫給所有工程師的標準作業規範。
->    * **核心內容：**
->      * 點出金句：*「`CrashLoopBackOff` 不是根因，它只是 Kubernetes 告訴你容器一直在退出，你的任務是找出退出原因。」*
->      * 提供第一黃金排查指令：`kubectl logs <pod> --previous`（查看上一代已經崩潰死亡的容器留下的遺言日誌）。
->      * 歸納 5 大常見原因：啟動配置錯誤、連不上資料庫、記憶體超出上限（OOMKilled）、Liveness 探針過早失敗、缺少相依性服務。
-> 2. **`postmortems/2026-03-payment-processor-outage.md`（歷史事故復盤 - 團隊的血淚教訓）**
->    * **它在幹嘛：** 記錄生產環境真實發生過的 SEV2 級重大故障。
->    * **事故故事：** 2026 年 3 月 16 日，`payment-processor` 服務癱瘓了整整 42 分鐘。根因是有人推送了一次 NetworkPolicy 變更，不小心封鎖了前往資料庫的網路路徑。而 `payment-processor` 在開機時必須連線 DB，連不上就直接退出（exit non-zero），導致整個服務陷入 CrashLoop。
->    * **為什麼重要：** 事故總結標記了改善行動（Action Items）：「下次若再發生 CrashLoop，請務必交叉檢查最近是否有 NetworkPolicy 異動」。
-> 3. **`blueprints/standard-service.md` & `tagging-and-labels.md`（架構規範 - 黃金標準）**
->    * **它在幹嘛：** 規定所有微服務在 K8s 部署的標準 YAML 骨架與強制標籤。
->    * **為什麼重要：** 規範中強制要求必須標註 `owner: <team>` 與 `environment: <env>`。正因為有這份規範，後面的 MCP Server 才能在抓出問題服務的瞬間，自動指認出「這是 `payments-team` 負責的」！
-> 
-> ---
-> 
-> ### ⚙️ 二、 RAG 管線（files/rag/）：這些 Python 檔案各自負責什麼？
-> 
-> 1. **`files/pgvector/pgvector.yaml`（向量庫部署檔）**：
->    在 K8s 裡啟動一台帶有向量擴展的 PostgreSQL 16，並透過 NodePort `localhost:30900` 對外開門，供本地程式連線存取向量。
-> 2. **`app/ingest.py`（文本切塊與向量入庫管線）**：
->    * 讀取上述 6 份 Markdown，將檔案上方的 YAML Frontmatter（type, title, owner）抽取出來。
->    * 按照每塊約 900 字元（重疊 150 字元）進行切塊（Chunking），共切出 18 個語意片段。
->    * 調用本地純 CPU 嵌入模型（`BAAI/bge-small-en-v1.5`），將文字轉為 384 維度的向量數值，一口氣寫入 PostgreSQL。
-> 3. **`app/store.py`（向量檢索核心）**：
->    封裝 SQL 查詢，使用 pgvector 的餘弦距離運算子（`<=>`）進行最相似語意比對。
-> 4. **`app/api.py`（FastAPI 對外服務）**：
->    暴露 `/ask` 端點。當工程師傳入問題，它把問題向量化，並呼叫 `store.py` 取出 Top-K 最相關文件。
-> 
-> ---
-> 
-> ### 🛰️ 三、 活體 MCP 伺服器（files/mcp/）：模擬即時現場
-> 
-> 1. **`files/broken-app.yaml`（故意的「事故點火器」）**：
->    * 裡面寫了這行經典代碼：
->      `command: ["sh", "-c", "echo 'connecting to database...'; sleep 2; echo 'connection timed out'; exit 1"]`
->    * **它完全在精確復刻 2026-03 事故！** 啟動 2 秒後因 DB 連線超時直接退出（`exit 1`），觸發 Kubernetes 不斷重啟它，形成真實的 `CrashLoopBackOff`。
-> 2. **`app/k8s.py`（叢集即時探針）**：
->    透過官方 `kubernetes` Python SDK 呼叫當前 K8s API，不僅檢查 Deployment 副本數，更深入 Pod 的 `container_statuses` 去抓取容器最後的 waiting 理由（抓出 `CrashLoopBackOff`）。
-> 3. **`app/server.py`（FastMCP 伺服器）**：
->    使用 `FastMCP` 將 `k8s.py` 封裝成標準的 MCP Tool：`@mcp.tool() def list_deployments(...)`，透過 stdio 傳輸標準協議。
-> 4. **`client_demo.py`（模擬 AI 主機客戶端）**：
->    模擬 Claude Desktop 或 Cursor 等 AI Host，向 `server.py` 發送 `ListToolsRequest` 探索工具，再發送 `CallToolRequest` 調用 `list_deployments`，將底層數據轉換為結構化 JSON。
-> 
-> ---
-> 
-> ### 🔬 四、 真實實驗結果：兩者串聯的驚豔效果
-> 
-> 當我們在本地 kind 叢集依序運行後，整個架構展現了驚人的「閉環威力」：
-> 
-> #### 1. MCP 抓出活體現場（「現在誰壞了？」）：
-> 執行 `.venv/bin/python client_demo.py --unhealthy`，MCP Server 穿透 K8s API 回傳：
-> ```json
-> {
->   "namespace": "broken-demo",
->   "name": "payment-processor",
->   "desired": 1,
->   "ready": 0,
->   "available": 0,
->   "healthy": false,
->   "owner": "payments-team",
->   "pod_reasons": [
->     "CrashLoopBackOff",
->     "Error"
->   ]
-> }
-> ```
-> * **解讀：** MCP 即時告訴我們「`payments-team` 的 `payment-processor` 此時此刻正在 `CrashLoopBackOff`」。
-> 
-> #### 2. RAG 調閱智慧庫（「這該怎麼修？過去發生過嗎？」）：
-> 拿著關鍵字問 RAG API (`/ask`)：
-> ```bash
-> curl -s -X POST http://127.0.0.1:8088/ask -H 'Content-Type: application/json' \
->   -d '{"question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?"}' | jq .
-> ```
-> **真實檢索命中結果：**
+## 💡 讀者實戰筆記：Chapter 4 實驗檔案全解析與「線上事故偵探」破案實戰
+
+官方儲存庫看似散落了一堆 Markdown 文件與 Python 檔案，**但其實背後是一齣精心設計的「線上維運事故與 AI 破案」劇本！** 
+
+為了讓讀者不再對這些檔案感到抽象，以下把各個檔案的**真實角色、內部關鍵內容、以及彼此如何串聯成閉環**做全景拆解：
+
+### 🎭 登場檔案的角色全景圖（劇本拆解）
+
+```text
+💥 1. 現場製造事故 (broken-app.yaml)
+       模擬真實事故：啟動時連不上 DB 逾時崩潰 (exit 1)
+                        ↓
+🔍 2. 活體偵測現場 (MCP 工具鏈: k8s.py → server.py → client_demo.py)
+       即時查出「誰壞了？壞在哪？錯誤原因？」→ 抓到 CrashLoopBackOff (owner: payments-team)
+                        ↓
+📚 3. 調閱歷史智慧 (RAG 管線: ingest.py → pgvector → store.py → api.py)
+       拿著 CrashLoopBackOff 關鍵字檢索知識庫，挖出歷史手冊與復盤報告
+                        ↓
+💡 4. 破案與修復指引 (知識庫檔案: crashloopbackoff.md + 2026-03 事故報告)
+       提供標準排查指令 (kubectl logs --previous) 與事故根因 (NetworkPolicy 阻擋)
+```
+
+---
+
+### 📁 一、 知識庫語料庫（Corpus）：這些 Markdown 到底寫了什麼？
+
+位於 `chapter-04/1-knowledge-corpus/corpus/`，這些文件並非隨機文字，而是嚴格扮演三種工程角色：
+
+#### 1. 排障手冊（Runbooks）：`runbooks/crashloopbackoff.md`
+平台團隊寫給所有工程師的標準作業規範（SOP）。
+
+* **核心金句：** *「`CrashLoopBackOff` 不是根因，它只是 Kubernetes 告訴你容器一直在退出，你的任務是找出退出原因。」*
+* **第一黃金指令：** 告訴工程師不要瞎猜，立刻查看上一代崩潰容器留下的遺言日誌：
+
+```bash
+kubectl logs <pod> -n <namespace> --previous
+```
+
+* **歸納 5 大常見原因：** 啟動配置錯誤、連不上資料庫、記憶體超出上限（OOMKilled）、Liveness 探針過早失敗、缺少相依性服務。
+
+#### 2. 歷史事故復盤（Postmortems）：`postmortems/2026-03-payment-processor-outage.md`
+記錄生產環境真實發生過的 SEV2 級重大故障（團隊的「血淚教訓」）。
+
+* **事故故事：** 2026 年 3 月 16 日，`payment-processor` 服務癱瘓了整整 42 分鐘。根因是有人推送了一次 NetworkPolicy 變更，不小心封鎖了前往資料庫的網路路徑。而 `payment-processor` 在開機時必須連線 DB，連不上就直接退出（`exit 1`），導致整個服務陷入 CrashLoop。
+* **為什麼重要：** 事故總結標記了改善行動（Action Items）：「下次若再發生 CrashLoop，請務必交叉檢查最近是否有 NetworkPolicy 異動」。
+
+#### 3. 架構規範（Blueprints）：`blueprints/standard-service.md` & `tagging-and-labels.md`
+規定所有微服務在 K8s 部署的標準 YAML 骨架與強制標籤。
+
+* **標籤合約規範範例：**
+
+```yaml
+labels:
+  app.kubernetes.io/name: payment-processor
+  owner: payments-team
+  environment: production
+```
+
+* **為什麼重要：** 正因為規範了強制 Label，後面的 MCP Server 才能在抓出問題服務的瞬間，自動指認出「這是 `payments-team` 負責的」！
+
+---
+
+### ⚙️ 二、 RAG 管線（files/rag/）：這些 Python 檔案各自負責什麼？
+
+| 檔案路徑 | 角色定位 | 具體工作說明 |
+|---|---|---|
+| **`files/pgvector/pgvector.yaml`** | 向量資料庫部署 | 在 K8s 裡啟動 PostgreSQL 16 搭配 `pgvector` 擴充套件，透過 NodePort `localhost:30900` 供本地程式連線存取向量。 |
+| **`app/ingest.py`** | 文本切塊與入庫管線 | 讀取上述 6 份 Markdown，抽取 YAML Frontmatter，以 900 字元（重疊 150 字元）切出 18 個語意片段，調用 CPU 模型（`BAAI/bge-small-en-v1.5`）轉為 384 維向量寫入 pgvector。 |
+| **`app/store.py`** | 向量資料存取層 | 封裝 SQL 查詢，使用 pgvector 的餘弦距離運算子（`<=>`）進行相似度比對。 |
+| **`app/api.py`** | 檢索與問答 API | 暴露 FastAPI `/ask` 端點。接收使用者的提問，轉化為向量並調用 `store.py` 取出 Top-K 最相關文件。 |
+
+---
+
+### 🛰️ 三、 活體 MCP 伺服器（files/mcp/）：模擬即時現場
+
+#### 1. 事故點火器：`files/broken-app.yaml`
+裡面寫了這行經典代碼，**完全在精確復刻 2026-03 事故**：
+```yaml
+command: ["sh", "-c", "echo 'connecting to database...'; sleep 2; echo 'connection timed out'; exit 1"]
+```
+啟動 2 秒後因 DB 連線超時直接退出（`exit 1`），觸發 Kubernetes 不斷重啟它，形成真實的 `CrashLoopBackOff`。
+
+#### 2. 叢集即時探針：`app/k8s.py`
+透過官方 `kubernetes` Python SDK 呼叫當前 K8s API，不僅檢查 Deployment 副本數，更深入 Pod 的 `container_statuses` 去抓取容器最後的 waiting 理由（抓出 `CrashLoopBackOff`）。
+
+#### 3. FastMCP 伺服器：`app/server.py`
+使用 `FastMCP` 將 `k8s.py` 封裝成標準的 MCP Tool：
+```python
+@mcp.tool()
+def list_deployments(namespace: Optional[str] = None, only_unhealthy: bool = False) -> list[dict]:
+    """List Kubernetes deployments and their live health."""
+    return k8s.list_deployments(namespace=namespace, only_unhealthy=only_unhealthy)
+```
+
+#### 4. 模擬 AI 主機客戶端：`client_demo.py`
+模擬 Claude Desktop 或 Cursor 等 AI Host，向 `server.py` 發送 `ListToolsRequest` 探索工具，再發送 `CallToolRequest` 調用 `list_deployments`，將底層數據轉換為結構化 JSON。
+
+---
+
+### 🔬 四、 真實實驗結果：兩者串聯的驚豔效果
+
+當我們在本地 kind 叢集依序運行後，整個架構展現了驚人的「閉環威力」：
+
+#### 步驟 1：MCP 抓出活體現場（「現在誰壞了？」）
+執行指令：
+```bash
+cd chapter-04/3-mcp-server/files/mcp
+.venv/bin/python client_demo.py --unhealthy
+```
+
+MCP Server 穿透 K8s API 回傳結構化 JSON：
+```json
+{
+  "namespace": "broken-demo",
+  "name": "payment-processor",
+  "desired": 1,
+  "ready": 0,
+  "available": 0,
+  "healthy": false,
+  "owner": "payments-team",
+  "pod_reasons": [
+    "CrashLoopBackOff",
+    "Error"
+  ]
+}
+```
+> **解讀：** MCP 即時告訴我們「`payments-team` 的 `payment-processor` 此時此刻正在 `CrashLoopBackOff`」。
+
+#### 步驟 2：RAG 調閱智慧庫（「這該怎麼修？過去發生過嗎？」）
+拿著關鍵字問 RAG API (`/ask`)：
+```bash
+curl -s -X POST http://127.0.0.1:8088/ask -H 'Content-Type: application/json' \
+  -d '{"question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?"}' | jq .
+```
+
+RAG 向量檢索回傳結果：
+```json
+{
+  "question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?",
+  "sources": [
+    {
+      "source": "runbooks/crashloopbackoff.md",
+      "doc_type": "runbook",
+      "title": "Diagnosing and fixing CrashLoopBackOff",
+      "owner": "platform-team",
+      "score": 0.827
+    },
+    {
+      "source": "postmortems/2026-03-payment-processor-outage.md",
+      "doc_type": "postmortem",
+      "title": "payment-processor CrashLoopBackOff after network-policy change",
+      "owner": "payments-team",
+      "score": 0.759
+    }
+  ]
+}
+```
+> **解讀：**
 > 1. 第一命中（得分 0.827）：`runbooks/crashloopbackoff.md`（SOP 告訴你用 `kubectl logs --previous` 看崩潰日誌）。
 > 2. 第二命中（得分 0.759）：`postmortems/2026-03-payment-processor-outage.md`（歷史報告告訴你當初 `payment-processor` 就是因為連不上 DB 崩潰，罪魁禍首是 NetworkPolicy）。
-> 
-> ---
-> 
-> ### 💡 結論：為什麼這種架構是未來的必經之路？
-> 如果沒有 **MCP**，AI 只能像瞎子摸象，完全不知道當前線上叢集正在發生什麼災難；
-> 如果沒有 **RAG**，AI 即使看到了錯誤關鍵字，也只能給出泛泛而談的空泛建議，無法結合內部團隊的架構歷史、手冊與權屬。
-> 
-> **MCP 提供「即時眼睛」，RAG 提供「組織大腦」**——這正是 Chapter 4 透過這一整組檔案想傳達的核心智慧，也是 Chapter 7 打造全自動自主運維 Agent 的必備基石。
+
+---
+
+### 💡 結論：為什麼這種架構是未來的必經之路？
+
+- 如果沒有 **MCP**，AI 只能像瞎子摸象，完全不知道當前線上叢集正在發生什麼災難；
+- 如果沒有 **RAG**，AI 即使看到了錯誤關鍵字，也只能給出泛泛而談的空泛建議，無法結合內部團隊的架構歷史、手冊與權屬。
+
+**MCP 提供「即時眼睛」，RAG 提供「組織大腦」**——這正是 Chapter 4 透過這一整組檔案想傳達的核心智慧，也是 Chapter 7 打造全自動自主運維 Agent 的必備基石。
 
 ## 跨越 MCP：方興未艾的多代理協議版圖
 
