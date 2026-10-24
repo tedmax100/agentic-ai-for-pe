@@ -422,3 +422,274 @@ In the next chapter, we turn to the future of AI-driven platform engineering and
 * OWASP, " *Top 10 for Agentic Applications* " ([owasp.org](https://owasp.org/), 2025). Threat taxonomy specific to autonomous AI agents: `ASI01` (Goal Hijack) through `ASI10`.
 * H. Xu et al., " *Governance Architecture for Autonomous Agent Systems,* " arXiv:2603.07191 (March 2026). Evaluates tool-call governance across 1,081 samples covering prompt injection, RAG poisoning, and malicious skill plugins.
 * J. Prabhu, *Jailbreaking LLMs: Protecting the Future of Enterprise Security* (Apress, 2026). Covers RAG security, agentic systems, incident response, AI governance, and runtime monitoring.
+
+
+---
+
+## 💡 讀者實戰筆記：企業級剛性安全防禦架構（Lab 0 ~ Lab 4 全流程端到端驗證紀錄）
+
+在第 7 章中，我們見證了自主多代理系統如何透過 GitOps 完成故障自癒。然而在進入真實企業生產環境時，一個最嚴峻的合規與安全問題立即浮現：**「如果代理被提示詞注入、或者開發者意圖越權操作其他租戶或生產環境，該如何進行絕對防禦？」**
+
+靠 Prompt「懇求」模型遵守規則是注定失敗的。第 8 章向我們展示了真正的「代碼即法律（Code is Law）」——**將安全治理下沉至基礎設施與執行期 Hook，建立跨 Backstage、Keycloak、OPA、MCP 與 Kubernetes 的縱深防禦體系**。
+
+```mermaid
+flowchart TD
+    subgraph IdentityTier["身分層 (Identity & Authentication)"]
+        UserAlice["Alice<br/>(platform-engineer / tenant-a)"]
+        UserBob["Bob<br/>(developer / tenant-b)"]
+        Keycloak["Keycloak 26.8 (:18083)<br/>(OIDC Realm: platform / 5-min JWT)"]
+    end
+
+    subgraph IngressGateway["存取閘道與執行期 (Agent Runtime)"]
+        TokenVal["TokenValidator<br/>(JWKS 簽名校驗 / 角色與租戶 Claim 提取)"]
+        Coordinator["Platform Coordinator (:18080)<br/>(Local Ollama: qwen2.5:7b)"]
+        
+        subgraph PolicyEnforcement["剛性政策執法層 (Hooks & PEP)"]
+            GuardrailHook["PolicyValidationHook<br/>(攔截每次 Tool Call)"]
+            AuditChainer["AuditHook (SHA-256 雜湊鏈)<br/>(/state/audit/AUDIT.log)"]
+        end
+    end
+
+    subgraph GovernanceTier["平台治理與授權 (Platform Governance & PDP)"]
+        Backstage["Backstage Catalog (:7007)<br/>(platform-security.yaml / 審查過的元數據)"]
+        OPA["Open Policy Agent (:8181)<br/>(roles.yaml + Rego 角色與環境矩陣 + 租戶隔離)"]
+    end
+
+    subgraph MCPAndWorkloads["隔離領域 MCP 與叢集工作負載"]
+        K8sMCP["Kubernetes 唯讀 MCP<br/>(quay.io/containers/kubernetes_mcp_server)"]
+        GitMCP["GitHub 變更 MCP<br/>(ghcr.io/github/github-mcp-server)"]
+        
+        subgraph Tenants["租戶工作負載與環境"]
+            LogisticsDev["logistics-demo<br/>(tenant-a / dev)"]
+            LogisticsProd["logistics-prod<br/>(tenant-a / production)"]
+            PaymentsDev["payments-demo<br/>(tenant-b / dev)"]
+        end
+    end
+
+    UserAlice & UserBob -->|取得短期 JWT| Keycloak
+    UserAlice & UserBob -->|Bearer Token + 意圖| TokenVal
+    TokenVal --> Coordinator
+    Coordinator --> GuardrailHook
+    GuardrailHook <-->|動態校驗准入清單| Backstage
+    GuardrailHook <-->|政策決策 (PDP)| OPA
+    GuardrailHook -->|密碼學記錄| AuditChainer
+    
+    GuardrailHook -->|放行唯讀探查| K8sMCP
+    GuardrailHook -->|放行 PR 提議| GitMCP
+    K8sMCP -.->|僅限所屬租戶與環境| LogisticsDev & LogisticsProd & PaymentsDev
+```
+
+---
+
+### 步驟 1：前置環境驗證與多租戶應用範本（Lab 0 & Lab 1）
+
+在開始之前，我們先確認叢集運行的基礎設施狀態：
+1. **複用第 7 章核心資源**：保持 `kind: agentic-platform`、Backstage 後端服務、ArgoCD、MCP 服務及密鑰（`agent-llm-credentials`、`gitops-mcp-github`、`agent-backstage-read`）。
+2. **升級 Backstage 範本**：更新 `examples/webapp-template`，使其產出的應用清單帶有嚴格的租戶與環境註解（Annotations）。
+3. **渲染三大跨租戶與環境應用**：
+   * `logistics-demo`：`tenant-a`，`dev`（物流測試環境）
+   * `payments-demo`：`tenant-b`，`dev`（支付測試環境）
+   * `logistics-prod`：`tenant-a`，`production`（物流正式環境）
+
+---
+
+### 步驟 2：Backstage 核准清單與強制性護欄（Lab 1 實證）
+
+傳統開發者往往直接在 Prompt 中填寫外部服務位址或憑證，極易造成憑證洩漏與跨界濫用。在 Lab 1 中，所有 MCP 服務與代理權限必須在 Backstage `platform-security.yaml` 中登記為受審查的 `Resource`：
+
+1. **治理資源註冊**：
+   * `kubernetes-mcp` 與 `github-mcp`：限定允許的映像檔版本、傳輸協議與端點。
+   * `coordinator-guardrails`、`diagnostics-guardrails`、`gitops-guardrails`：嚴格列出各代理唯一核准使用的工具白名單（Allowed Tools）。
+2. **本機 Ollama 整合與映像檔打包**：
+   * 在 `common/runtime` 中擴充支援本機 Ollama（`qwen2.5:7b`），打包建置 `agent-runtime:0.8.1` 並載入 kind 叢集。
+   * 提交 GitOps PR #8 並合併，ArgoCD 自動調諧部署。
+3. **實機 MCP 白名單授權校驗**：
+   在 `agent-runtime` 容器內執行核准清單驗證腳本：
+   ```text
+   diagnostics -> kubernetes: ALLOW
+   gitops -> github: ALLOW
+   diagnostics -> github: DENY: mcp_server_not_approved
+   gitops -> kubernetes: DENY: mcp_server_not_approved
+   diagnostics -> filesystem: DENY: mcp_server_not_approved
+   ```
+   * 診斷代理嘗試存取 GitHub MCP ➜ **立刻阻斷（未核准）**
+   * GitOps 代理嘗試存取 Kubernetes MCP ➜ **立刻阻斷（未核准）**
+   * 任何代理嘗試調用未註冊的本地檔案系統 ➜ **立刻阻斷（未核准）**
+4. **第二道防線：Kubernetes RBAC 核心硬防禦**：
+   即使代理嘗試調用寫入工具，底層 Kubernetes RBAC 也會徹底阻截：
+   ```bash
+   $ kubectl auth can-i get deployments --as=system:serviceaccount:agent-platform:cluster-mcp -n logistics-demo
+   yes
+   $ kubectl auth can-i create deployments --as=system:serviceaccount:agent-platform:cluster-mcp -n logistics-demo
+   no
+   ```
+
+---
+
+### 步驟 3：Open Policy Agent (OPA) 角色與環境授權矩陣（Lab 2 實證）
+
+光有靜態工具白名單還不夠：**同一項工具，誰有權在什麼環境執行？**
+Lab 2 引入 Open Policy Agent（OPA 1.4.2-static），將權限決策抽離為獨立的 Rego 策略引擎：
+
+1. **部署 OPA 政策引擎**：
+   * 載入 `roles.yaml`、`agent-tool-validation.rego` 與 `system-authz.rego`至 ConfigMap `agent-policies`。
+   * 啟動 `opa-policy-engine` 獨立微服務（Port: `:8181`）。
+   * 升級執行期至 `agent-runtime:0.8.2`（啟用 `OPA_ENABLED=true`、`SECURITY_MODE=opa`），透過 PR #9 落地。
+2. **免模型純策略判定實測**：
+   ```text
+   Alice: diagnose    ALLOW
+   Alice: propose PR  ALLOW
+   Viewer: diagnose   ALLOW
+   Viewer: propose PR DENY: permission_denied
+   ```
+   * `viewer` 角色雖然可以使用診斷功能，但一旦嘗試呼叫 `propose_change` 提議 PR，OPA 當場判定拒絕！
+3. **角色 vs. 環境（Dev / Staging / Production）完整授權矩陣**：
+   針對不同角色在三大環境下的 PR 提議權限進行全覆蓋實測：
+   ```text
+   角色 (Role)          環境 (Env)    OPA 決策
+   --------------------------------------------
+   viewer              dev           DENY
+   viewer              staging       DENY
+   viewer              production    DENY
+   developer           dev           ALLOW
+   developer           staging       DENY
+   developer           production    DENY
+   platform-engineer   dev           ALLOW
+   platform-engineer   staging       ALLOW
+   platform-engineer   production    DENY
+   release-engineer    dev           ALLOW
+   release-engineer    staging       ALLOW
+   release-engineer    production    ALLOW
+   ```
+   * 一般開發者（Developer）只能在 `dev` 發起修復。
+   * 平台工程師（Platform Engineer）可在 `dev` 與 `staging` 發起變更，但**絕無權限碰觸生產環境（Production）**！
+   * 唯有發布工程師（Release Engineer）才具備生產環境變更審查與提議資格。
+
+---
+
+### 步驟 4：Keycloak 身分認證與短期 Token 驗證（Lab 3 實證）
+
+在 Lab 2 之前，使用者身分是寫死的靜態變數。Lab 3 部署了生產級身分提供商 Keycloak，以密碼學數位簽章徹底解決「身分偽造」問題：
+
+1. **部署 Keycloak 叢集身分提供者**：
+   * 部署 `quay.io/keycloak/keycloak:26.8.1`（Port: `:18083`），自動匯入 `platform` Realm。
+   * 註冊兩大測試身分：
+     * `alice`：角色為 `platform-engineer`
+     * `bob`：角色為 `developer`
+   * 密鑰產生：隨機產生高強度密碼與 Client Secret，並儲存於 Secret `keycloak-realm-import`。
+2. **執行期簽名驗證（Signed Token）**：
+   * 升級至 `agent-runtime:0.8.3`，設定 `SECURITY_MODE=signed-token`，並將 `TOKEN_JWKS_URL` 指向 Keycloak 公鑰端點。
+   * 透過 PR #10 合併部署。
+3. **未帶憑證存取（Unauthenticated）實測**：
+   ```bash
+   $ curl -i http://localhost:18080/invoke -d '{"intent":"Inspect logistics-demo."}'
+   HTTP/1.1 401 Unauthorized
+   {"detail":"missing_bearer_token"}
+   ```
+   * 任何未經身分認證的請求，在進入模型或工具前**瞬間以 401 攔截**！
+4. **短期 Access Token 簽發與解析**：
+   向 Keycloak 請求 5 分鐘有效期的 Bearer Token：
+   ```json
+   {
+     "sub": "044bb38c-a20b-4add-b234-256de7012120",
+     "preferred_username": "alice",
+     "aud": "agent-platform",
+     "roles": ["platform-engineer"],
+     "exp": 1792864371
+   }
+   ```
+5. **生產環境越權攔截實測（Production Denial）**：
+   Alice 使用有效 Token 嘗試診斷生產工作負載 `logistics-prod`：
+   ```bash
+   curl -s http://localhost:18080/invoke \
+     -H "Authorization: Bearer $ALICE_TOKEN" \
+     -d '{"intent":"Inspect logistics-prod and report its live status."}' | jq .
+   ```
+   **代理回應**：
+   > *"I'm sorry, but I don't have the necessary permissions to inspect the live status of the logistics-prod application. Only authorized personnel with the appropriate roles can perform this action."*
+   * Alice 雖然成功登入，但 OPA 依據 Token 中的角色判定其無權存取 `production`，工具調用遭到 Hook 拔除，代理老實承認權限不足！
+
+---
+
+### 步驟 5：端到端多租戶隔離與雜湊鏈稽核（Lab 4 實證）
+
+這是企業最關鍵的防線——**租戶 A 的工程師絕對不能窺探或變更租戶 B 的資源，反之亦然**：
+
+1. **擴充 Keycloak 租戶 Claim**：
+   * 透過 `add-tenant-claim.jq` 為 Token 注入 `tenant_id` Claim：
+     * Alice ➜ 綁定 `tenant_a`
+     * Bob ➜ 綁定 `tenant_b`
+2. **新增 OPA 租戶隔離規則（`tenant-isolation.rego`）**：
+   ```rego
+   deny contains "tenant_denied" if {
+       valid_target
+       valid_tenant_identity
+       input.identity.tenant_id != input.target.tenant_id
+   }
+   ```
+   * 只要請求身分的 `tenant_id` 與目標應用的 `tenant_id` 不符，直接判定 `tenant_denied`！
+3. **構建多租戶隔離執行期 `agent-runtime:0.8.4`**：
+   * 強化 `Principal` 結構，要求必須包含 `tenant_id`。
+   * 會話與長期記憶儲存鍵值（Storage Key）改為 `SHA-256([tenant_id, sub])`，從物理路徑上徹底杜絕跨租戶記憶投毒與會話串線。
+   * 透過 PR #11 合併部署上線。
+4. **真實跨租戶攻防驗證紀錄**：
+
+   * **測試 A：Bob 存取同租戶應用 `payments-demo`（tenant-b ➜ tenant-b）**：
+     ```json
+     {
+       "session_id": "ch08-tenant-demo",
+       "response": "Based on the diagnostics, the payments-demo application is running with both pods in a 'Running' state..."
+     }
+     ```
+     ✅ **同租戶正常放行！**
+
+   * **測試 B：Bob 跨租戶窺探 `logistics-demo`（tenant-b ➜ tenant-a）**：
+     ```json
+     {
+       "session_id": "ch08-tenant-demo",
+       "response": "I'm unable to review the logistics-demo application's Git manifest due to permission restrictions..."
+     }
+     ```
+     🛡️ **跨租戶越權當場被 OPA 拒絕，工具遭到取消！**
+
+   * **測試 C：Alice 存取同租戶應用 `logistics-demo`（tenant-a ➜ tenant-a）**：
+     ```json
+     {
+       "session_id": "ch08-tenant-alice",
+       "response": "The logistics-demo application is currently running with two pods..."
+     }
+     ```
+     ✅ **同租戶正常放行！**
+
+   * **測試 D：Alice 跨租戶窺探 `payments-demo`（tenant-a ➜ tenant-b）**：
+     ```json
+     {
+       "session_id": "ch08-tenant-alice",
+       "response": "I'm unable to inspect the payments-demo application as it is not within the namespaces that I have access to for this tenant..."
+     }
+     ```
+     🛡️ **跨租戶越權當場被 OPA 拒絕，雙向隔離百分之百生效！**
+
+5. **密碼學防篡改稽核鏈（104 筆紀錄完整通過校驗）**：
+   每次身分認證、政策決策（Allow/Deny）與工具執行皆被記錄至 `/state/audit/AUDIT.log`。我們在容器內執行 SHA-256 前向雜湊鏈校驗腳本：
+   ```bash
+   $ kubectl -n agent-platform exec deploy/agent-runtime -- python3 -c '...'
+   Cryptographic chain VERIFIED: 104 audit records intact!
+   ```
+   ✅ **全場景 104 筆安全與審計事件緊密雜湊串接，無任何斷裂或篡改！**
+
+---
+
+### 💡 核心工程避坑指南
+
+1. **不可信的 LLM 參數 vs. 受信任的伺服器解析**：
+   * 絕對不要讓代理從 Prompt 裡自行挑選「目標 Namespace 或 Tenant ID」傳給底層工具。在我們的架構中，代理只能傳遞 `application="logistics-demo"`，而該應用的真實 `namespace`、`tenant_id` 與 `environment` 是由執行期直接從 Backstage Catalog API 查詢而得，從根本上切斷了提示詞注入攻擊者篡改目標屬性的可能性。
+2. **多租戶狀態與記憶的實體路徑隔離**：
+   * 若多個租戶共享同一個代理，若只以 `session_id` 作為儲存索引，惡意租戶可透過碰撞相同的 `session_id` 讀取他人會話。我們將儲存索引改為 `SHA-256([tenant_id, sub])`，使不同租戶的狀態儲存在完全獨立的目錄中，徹底免疫記憶投毒（Memory Poisoning）。
+3. **縱深防禦的層次化架構**：
+   * 任何單一防線都是脆弱的：
+     * **第一層**：Keycloak 驗證「你是誰」（Authentication）
+     * **第二層**：Backstage 限制「平台核准了哪些能力」（Catalog Whitelist）
+     * **第三層**：OPA 動態評估「你在這個環境能不能做這件事」（Fine-grained Authorization）
+     * **第四層**：Kubernetes RBAC 確保「即使代碼有 Bug，叢集也拒絕寫入」（Kernel Least Privilege）
+     * **第五層**：SHA-256 雜湊鏈「事後凡走過必留下痕跡」（Non-repudiation Audit）
