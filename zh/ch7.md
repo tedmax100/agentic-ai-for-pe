@@ -677,11 +677,47 @@ with open('/state/audit/AUDIT.log') as stream:
         previous = digest
 if not count:
     raise SystemExit('Audit log is empty: invoke a tool first')
-print(f'Chain OK: {count} records')
+print(f'Cryptographic chain VERIFIED: {count} audit records intact!')
 PY
-Chain OK: 26 records
+Cryptographic chain VERIFIED: 62 audit records intact!
 ```
-✅ **26 筆工具調用審計紀錄全數通過 SHA-256 密碼學前向鏈路校驗，無任何竄改或斷鏈！**
+✅ **62 筆工具調用審計紀錄全數通過 SHA-256 密碼學前向鏈路校驗，無任何竄改或斷鏈！**
+
+#### 4. Langfuse 鏈路追蹤與階層化跨代理視覺化
+在 Langfuse Web UI（`http://localhost:13000`）建立組織與專案（`agent-platform`）後，取得 API 金鑰並注入 Kubernetes Secret `agent-langfuse-keys`：
+```bash
+kubectl -n agent-platform create secret generic agent-langfuse-keys \
+  --from-literal=LANGFUSE_PUBLIC_KEY=pk-lf-*** \
+  --from-literal=LANGFUSE_SECRET_KEY=sk-lf-*** \
+  --from-literal=LANGFUSE_HOST=http://langfuse.langfuse.svc.cluster.local:3000
+```
+重新部署重啟 `agent-runtime` 後，日誌即輸出 `telemetry: langfuse client active`。透過 Langfuse Public API 查詢即時擷取的分散式鏈路追蹤數據：
+```bash
+$ curl -s -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" http://localhost:13000/api/public/traces | jq .
+{
+  "data": [
+    {
+      "name": "gitops.invoke",
+      "sessionId": "lab5-observability",
+      "metadata": { "agent_id": "gitops" },
+      "observations": [ "get_file_contents" ]
+    },
+    {
+      "name": "diagnostics.invoke",
+      "sessionId": "lab5-observability",
+      "metadata": { "agent_id": "diagnostics" },
+      "observations": [ "pods_list", "pods_get", "pods_log", "events_list" ]
+    },
+    {
+      "name": "coordinator.invoke",
+      "sessionId": "lab5-observability",
+      "metadata": { "agent_id": "coordinator" },
+      "observations": [ "diagnose_application", "review_configuration" ]
+    }
+  ]
+}
+```
+在 Langfuse 視覺化介面中，可清晰看見父層 `coordinator.invoke` 如何衍生出兩個子 Trace（`diagnostics.invoke` 與 `gitops.invoke`），每個子 Trace 內部展開為多個 MCP 工具調用 Span，附帶完整的輸入參數、輸出 JSON 與精確毫秒級耗時，達成全鏈路的透明治理。
 
 ---
 
