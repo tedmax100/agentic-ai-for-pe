@@ -364,7 +364,7 @@ The Strands labs put these ideas into practice with two-layer memory, skills, go
 
 ---
 
-## 讀者實戰筆記：本地多代理維運架構與 GitOps 自癒全流程（Lab 0 ~ Lab 5 全流程端到端驗證紀錄）
+## 💡 讀者實戰筆記：本地多代理維運架構與 GitOps 自癒全流程（Lab 0 ~ Lab 5 全流程端到端驗證紀錄）
 
 為了將書中「從洞察邁向行動（From Insight to Action）」、「專精代理協同」與「受控 GitOps 自癒閉環」的架構哲學完全實體化，我們在本地 `kind` 叢集（`agentic-platform`）中完成了完整的端到端實機搭建與真實故障修復演練：
 
