@@ -364,3 +364,272 @@ Kubernetes 立即調度啟動了一個全新 Pod，但由於 PVC 的存在，`ME
 ### 🛠️ 明日行動清單
 * [ ] 拿「就緒度四大特質」自我檢視公司的內部 API：如果明天有一個自主代理開始調用，我們的 API 會不會因為缺乏等冪性或被限流而崩潰？
 * [ ] 在本地端把玩本書的第 7 章配套儲存庫，親身體驗 `AlwaysPRHook` 是如何在底層硬生生攔截未經許可的直寫操作。
+
+---
+
+## 讀者實戰筆記：本地多代理維運架構與 GitOps 自癒全流程（Lab 0 ~ Lab 4 端到端驗證紀錄）
+
+為了將書中「從洞察邁向行動（From Insight to Action）」、「專精代理協同」與「受控 GitOps 自癒閉環」的架構哲學完全實體化，我們在本地 `kind` 叢集（`agentic-platform`）中完成了完整的端到端實機搭建與真實故障修復演練：
+
+```mermaid
+flowchart TD
+    subgraph Clients["客戶端與統一入口"]
+        BackstageChat["Backstage Chat Assistant<br/>(/assistant/general)"]
+        CurlCLI["外部指令呼叫<br/>(curl /invoke)"]
+    end
+
+    subgraph BackstageHost["Backstage 後端主機 (:7007)"]
+        Adapter["Strands Proxy 介接模組<br/>(strands-proxy-agent.ts)"]
+        CatalogAPI["目錄與文件 API<br/>(/api/catalog, /api/search)"]
+    end
+
+    subgraph AgentRuntime["Agent 執行期 (agent-platform/agent-runtime:0.7.3)"]
+        Coordinator["Platform Coordinator<br/>(協調調度 / 意圖分解)"]
+        
+        subgraph Specialists["專精代理 (Local Tools 模式)"]
+            DiagnosticsAgent["叢集診斷專家<br/>(Diagnostics Specialist)"]
+            GitOpsAgent["GitOps 變更專家<br/>(GitOps Change Specialist)"]
+        end
+
+        subgraph Governance["剛性治理與防禦 Hook"]
+            ScopeHook["ApplicationScope<br/>(鎖定目標命名空間 / 阻絕越界)"]
+            PRHook["AlwaysPRHook<br/>(強制品管: [agent] 標題與說明)"]
+            BudgetHook["BudgetHook<br/>(單次請求工具調用配額: 24次)"]
+        end
+
+        subgraph StatePersist["執行期狀態與技能"]
+            Identity["agent-identity ConfigMap<br/>(SOUL.md / IDENTITY.md)"]
+            Memory["agent-memory PVC<br/>(MEMORY.md 長期事實)"]
+            Skills["agent-skills ConfigMap<br/>(fix-image-tag / SKILL.md)"]
+        end
+    end
+
+    subgraph MCPTier["領域 MCP 服務層 (Streamable HTTP :8080/mcp)"]
+        K8sMCP["Kubernetes 官方 MCP<br/>(quay.io/containers/kubernetes_mcp_server)"]
+        GitHubMCP["GitHub 官方 MCP<br/>(ghcr.io/github/github-mcp-server)"]
+    end
+
+    subgraph ExternalServices["外部相依與推論引擎"]
+        LocalOllama["Local Ollama (:11434)<br/>(qwen2.5:7b @ 172.18.0.1)"]
+        GitHubRepo["GitHub 儲存庫<br/>(tedmax100/backstage-components)"]
+        ArgoCD["ArgoCD v3.0.21<br/>(ApplicationSet 同步引擎)"]
+        Cluster["Kubernetes 叢集<br/>(my-first-app 工作負載)"]
+    end
+
+    BackstageChat -->|Chat Stream| Adapter
+    Adapter -->|HTTP POST /invoke| Coordinator
+    CurlCLI -->|HTTP POST /invoke| Coordinator
+
+    Coordinator <-->|ChatOllama| LocalOllama
+    Coordinator -->|診斷意圖| DiagnosticsAgent
+    Coordinator -->|修復意圖| GitOpsAgent
+    Coordinator -->|服務認證調用| CatalogAPI
+
+    DiagnosticsAgent --> ScopeHook
+    DiagnosticsAgent -->|唯讀查詢工具| K8sMCP
+    K8sMCP -->|Pods / Events / Logs| Cluster
+
+    GitOpsAgent --> ScopeHook
+    GitOpsAgent --> PRHook
+    GitOpsAgent -->|載入排障技能| Skills
+    GitOpsAgent -->|讀寫清單 / 發起 PR| GitHubMCP
+    GitHubMCP -->|分支與 Pull Request| GitHubRepo
+
+    GitHubRepo -->|人工審查合併| ArgoCD
+    ArgoCD -->|GitOps 自動調諧| Cluster
+```
+
+---
+
+### 步驟 1：基礎環境與密鑰準備（Lab 0）
+
+在進入代理構建之前，必須建立嚴格的身分憑證與隔離環境：
+1. **建立專屬命名空間**：建立 `agent-platform` 作為代理基礎設施的運行環境。
+2. **密鑰配置**：
+   - `agent-llm-credentials`：注入推論金鑰或配置（在本地環境中使用 Ollama 供應者）。
+   - `gitops-mcp-github`：存放具備儲存庫讀寫與 PR 建立權限的 `GITHUB_PERSONAL_ACCESS_TOKEN`。
+   - `argocd/github-creds`：確保 ArgoCD 具備拉取組件儲存庫的憑證。
+3. **驗證腳本**：執行配套的 `verify.sh`，確認叢集所有前置資源皆已就緒。
+
+---
+
+### 步驟 2：Strands 代理執行期、Ollama 本機整合與雙層記憶（Lab 1）
+
+在 Lab 1 中，我們將代理從入口網站中徹底解耦，以獨立的雲原生微服務形式運行：
+
+#### 1. 擴充本地 Ollama 供應者
+書中配套代碼原生僅預設了 AWS Bedrock 與 Anthropic。為了在完全本地端無縫閉環，我們在 `requirements.txt` 中引入 `ollama>=0.3.0`，並在 `settings.py` 與 `agent.py` 擴充 `strands.models.ollama.OllamaModel`：
+```python
+# settings.py
+ollama_model_id: str = os.getenv("OLLAMA_MODEL_ID", "qwen2.5:7b")
+ollama_host: str = os.getenv("OLLAMA_HOST", "http://172.18.0.1:11434")
+
+# agent.py
+if settings.llm_provider == "ollama":
+    from strands.models.ollama import OllamaModel
+    return OllamaModel(host=settings.ollama_host, model_id=settings.ollama_model_id)
+```
+> [!NOTE]
+> 在 `kind` 叢集內的容器中，宿主機（Host）的預設網關 IP 通常為 `172.18.0.1`。將 `OLLAMA_HOST` 指向 `http://172.18.0.1:11434`，即可讓叢集內運行的代理直接調用本機 GPU/CPU 執行的 `qwen2.5:7b` 模型。
+
+#### 2. 映像檔打包與 GitOps 部署
+建置 `agent-runtime:0.7.1` 並載入 kind 叢集，隨後透過分支 `chapter-07/lab-1` 提交 Kubernetes 清單至 `tedmax100/backstage-components`，發起 PR #2 並合併。ArgoCD 自動調諧部署出包含 PVC 掛載的 `agent-runtime`。
+
+#### 3. 人設與長期記憶驗證
+- **人設約束**：透過 ConfigMap 掛載 `SOUL.md` 與 `IDENTITY.md`，代理嚴格以「平台維運工程師」身分回應，並遵守「未經確認絕不發起破壞性操作」的底線。
+- **持久化記憶（MEMORY.md）**：透過 `save_to_memory` 工具將事實記錄至掛載於 PVC 的 `/state/memory/MEMORY.md`。重啟 Pod 後再次提問，代理仍能精準提取先前記憶的事實，達成跨生命週期的記憶留存。
+
+---
+
+### 步驟 3：叢集診斷專家與官方 Kubernetes MCP（Lab 2）
+
+全能型代理（Generalist）容易因為工具過多導致上下文爆炸與推理幻覺。Lab 2 開始將代理職責拆分：
+
+1. **部署官方 Kubernetes MCP 伺服器**：
+   - 映像檔：`quay.io/containers/kubernetes_mcp_server:v0.0.66`
+   - 暴露端點：Streamable HTTP `http://cluster-mcp.agent-platform.svc.cluster.local:8080/mcp`
+   - 最小權限 RBAC：透過 `ClusterRole` 僅授予 `deployments`、`replicasets`、`pods`、`services` 與 `events` 的 `get` 和 `list` 唯讀權限，以及 `pods/log` 的讀取權限，**徹底從核心杜絕叢集寫入風險**。
+2. **部署診斷專家**：建置 `agent-runtime:0.7.2`，透過 PR #3 部署上線。
+3. **實機診斷呼叫驗證**：
+   透過 `/invoke` 端點請求診斷 `my-first-app`：
+   ```bash
+   curl -s -X POST http://localhost:18080/invoke \
+     -H 'Content-Type: application/json' \
+     -d '{"intent":"Inspect my-first-app. Explain its health with evidence and any uncertainty.","session_id":"chapter07-diagnosis"}' | jq .
+   ```
+   **代理真實回應結果**：
+   ```json
+   {
+     "session_id": "chapter07-diagnosis",
+     "response": "Based on the provided pod information, here are the observations and evidence:\n\n### Application\n- **Name:** `my-first-app`\n- **Namespace:** `my-first-app`\n\n### Observations\n1. **Pod State:** The pod is in the Running state. All containers are ready...\n2. **Container:** Name: nginx, Image: public.ecr.aws/nginx/nginx:alpine\n3. **Resources:** Limits: CPU: 100m, Memory: 128Mi; Requests: CPU: 50m, Memory: 64Mi\n...\n### Evidence\n- The pod has been running since 2026-10-24T15:22:44Z.\n- The container nginx is running and has started at 2026-10-24T15:22:50Z."
+   }
+   ```
+   代理精準調用 `pods_list_in_namespace` 與 `pods_get`，以詳實的數據證據（啟動時間戳、探針狀態、資源限制）產出專業的診斷報告。
+
+---
+
+### 步驟 4：GitOps 變更專家、平台協調者與真實自癒 PR 閉環（Lab 3）
+
+這是全書最精彩的章節——**讓 AI 代理能夠「動手修復」，但變更「只能透過 PR」落地，由人類掌控最終合併權**。
+
+#### 1. 部署官方 GitHub MCP 伺服器
+- 映像檔：`ghcr.io/github/github-mcp-server:v1.12.1`
+- 暴露端點：Streamable HTTP `http://gitops-mcp.agent-platform.svc.cluster.local:8080/mcp`
+- 嚴格限制啟用工具：`get_file_contents`、`create_branch`、`create_or_update_file`、`create_pull_request`。
+
+#### 2. 多代理協同架構：Coordinator 與 Agents as Local Tools
+在 `platform_coordinator.py` 中，協調者並不直接握有任何 Kubernetes 或 GitHub 工具，而是透過三項受控的本地委派工具調度專精代理：
+- `diagnose_application` ➜ 委派給 `Diagnostics Specialist`
+- `review_configuration` ➜ 委派給 `GitOps Specialist`
+- `propose_change` ➜ 委派給 `GitOps Specialist` 並傳入現場診斷證據
+
+#### 3. 程式碼層級的剛性安全防線（Hooks）
+提示詞（Prompt）只是模型可能忽略的軟性建議；程式碼 Hook 才是不可踰越的剛性法律：
+- **`ApplicationScope`**：限制診斷代理只能查詢目標命名空間；限制 GitOps 代理只能修改目標應用的 `k8s/deployment.yaml`，且分支名稱必須以 `agent/` 開頭。
+- **`AlwaysPRHook`**：攔截所有 `create_pull_request` 調用，強制檢查：
+  1. PR 標題必須以 `[agent] ` 開頭（符合規範審查前綴）。
+  2. PR 說明文字必須大於 20 個字元，詳述故障根因與修復理由。
+  若有任一不符，Hook 當場阻斷調用，逼迫模型修正重試。
+- **`fix-image-tag/SKILL.md`**：以 ConfigMap 掛載的標準維運程序（SOP），指導 GitOps 代理按步就班完成「讀取現有 Manifest ➜ 取得 SHA ➜ 建立分支 ➜ 提交更新 ➜ 發起 PR」。
+
+#### 4. 真實故障演練與自癒全紀錄
+
+**第一步：刻意注入故障**
+我們在 `my-first-app` 中刻意將映像檔修改為不存在的標籤：
+```bash
+sed -i -E 's#(image:[[:space:]]*)([^[:space:]]*nginx[^[:space:]]*)#\1nginx:does-not-exist#' my-first-app/k8s/deployment.yaml
+```
+透過 PR #5 合併後，ArgoCD 自動調諧，`my-first-app` 進入故障狀態：
+```bash
+$ kubectl -n my-first-app get pods
+NAME                            READY   STATUS         RESTARTS   AGE
+my-first-app-5dfc586bb6-msl8v   0/1     ErrImagePull   0          39s
+```
+
+**第二步：呼叫 Coordinator 進行現場診斷**
+```bash
+curl -s --fail-with-body http://localhost:18080/invoke -H 'Content-Type: application/json' \
+  -d '{"intent":"Why is my-first-app failing? Inspect its live state.","session_id":"chapter07-lab3-broken"}' | jq .
+```
+Coordinator 委派給 Diagnostics 專家，透過 Kubernetes MCP 探查叢集，回報：
+> *「`my-first-app` 由於 `ErrImagePull` 錯誤導致失敗，Pod 無法拉取映像檔。建議檢查映像檔標籤是否正確。」*
+
+**第三步：要求 Coordinator 發起修復**
+在同一個對話 Session 中發送修復請求：
+```bash
+curl -s --fail-with-body http://localhost:18080/invoke -H 'Content-Type: application/json' \
+  -d '{"intent":"If the evidence establishes a broken nginx image tag, propose a PR changing it to nginx:alpine. Otherwise explain what is missing.","session_id":"chapter07-lab3-broken"}' | jq .
+```
+
+**執行期後台調度軌跡（摘自 `agent-runtime` 容器日誌）**：
+```
+1. Coordinator 調用 propose_change(application="my-first-app", request="...")
+2. GitOps 專家啟動，調用 get_file_contents 讀取 my-first-app/k8s/deployment.yaml (取得 SHA)
+3. GitOps 專家調用 consult_skill(name="fix-image-tag") 載入標準作業程序
+4. GitOps 專家調用 create_branch(branch="agent/fix-my-first-app-image-tag")
+5. GitOps 專家調用 create_or_update_file 更新映像檔為 nginx:alpine
+6. AlwaysPRHook 檢查標題與 Rationale 通過
+7. GitOps 專家調用 create_pull_request 成功發起 PR #6！
+```
+
+**第四步：人類審查代理自動建立的 GitHub PR**
+```bash
+$ gh pr view 6 --repo tedmax100/backstage-components
+[agent] fix my-first-app image tag in my-first-app tedmax100/backstage-components#6
+Open • tedmax100 (Nathan.Lu) wants to merge 1 commit into main from agent/fix-my-first-app-image-tag
+
+  Deployment image tag for my-first-app has been updated to 'nginx:alpine'.
+  Before: image: nginx:does-not-exist
+  After:  image: nginx:alpine
+
+$ gh pr diff 6 --repo tedmax100/backstage-components
+--- a/my-first-app/k8s/deployment.yaml
++++ b/my-first-app/k8s/deployment.yaml
+@@ -19,7 +19,7 @@ spec:
+     spec:
+       containers:
+       - name: nginx
+-        image: nginx:does-not-exist
++        image: nginx:alpine
+```
+代理產出的 PR 完美遵守了 `[agent]` 命名規範、精準只修改映像檔標籤，且附帶了清晰的變更原由！
+
+**第五步：合併 PR，見證 ArgoCD 自動調諧修復**
+```bash
+$ gh pr merge 6 --merge --delete-branch --repo tedmax100/backstage-components
+✓ Merged pull request tedmax100/backstage-components#6
+
+$ kubectl -n my-first-app get pods
+NAME                            READY   STATUS    RESTARTS   AGE
+my-first-app-7d4bcb9f6b-7dl2t   1/1     Running   0          25s
+my-first-app-7d4bcb9f6b-jkd2n   1/1     Running   0          36s
+```
+工作負載在人類核准 PR 後瞬間自癒收斂，無任何人員手動操作 `kubectl edit`！
+
+---
+
+### 步驟 5：回到 Backstage Chat 統一協同視窗（Lab 4）
+
+在 Lab 4 中，我們把這套強大的多代理系統無縫接回開發者的日常工作介面——Backstage Chat Assistant：
+
+1. **開發 `strands-proxy-agent.ts` 後端模組**：
+   實作 `@aws/genai-plugin-for-backstage-node` 的 `AgentType` 介面，將使用者的對話意圖與 `sessionId` 透傳至 `http://localhost:18080/invoke`。
+2. **Backstage 服務間認證（Service-to-Service Auth）**：
+   Coordinator 需要查詢 Backstage 的目錄與 TechDocs，但身處獨立容器中。我們產生了 `BACKSTAGE_SERVICE_TOKEN`：
+   - 注入叢集 Secret：`agent-backstage-read`
+   - 配置 Backstage `app-config.local.yaml` 的 `backend.auth.externalAccess`，開放 `catalog` 與 `search` 插件存取權限。
+3. **統一聊天對話驗證**：
+   在 Backstage 對話視窗中輸入：
+   - *「Find my-first-app in the catalog.」* ➜ Coordinator 透過 `search_catalog` 工具查得 `my-first-app` 隸屬於 `user:guest`。
+   - *「Why is my-first-app failing? Inspect its live state.」* ➜ Coordinator 委派 Diagnostics 專家探查叢集，回報應用剛經過 ArgoCD 調諧，目前處於健康狀態（Healthy），並如實說明目前無需發起任何修復 PR。
+
+---
+
+### 💡 核心工程避坑指南
+
+1. **Host 路由互通性（Kind 內部訪問宿主機服務）**：
+   - 在 Linux 環境下的 `kind` 叢集內，`host.docker.internal` 可能無法直接解析。Pod 內部訪問宿主機上的 Ollama（`:11434`）或 Backstage（`:7007`）時，應使用 Docker 預設網橋閘道 `172.18.0.1`，確保連線穩定暢通。
+2. **剛性 Hook 執法優於軟性提示詞**：
+   - 絕不能只在 System Prompt 裡寫「請在 PR 標題加上 [agent]」；LLM 在多輪推理或小參數模型（如 7B）下極易忽略提示詞。透過 Strands `BeforeToolCallEvent` Hook 進行正規表達式攔截，是確保 AI 行為符合組織規範的唯一可靠手段。
+3. **單執行期多代理 vs. 跨網路 A2A 的權衡**：
+   - 書中將專精代理設計為 Coordinator 的「Local Tools」，共享同一個 Python 執行期與 Tool Budget。這種模式極大幅度簡化了會話管理、網路延遲與除錯成本。只有當不同領域代理需要獨立伸縮、獨立發布或隸屬於不同團隊時，才需要進一步演進至基於網路協議的 Agent2Agent (A2A) 架構。
