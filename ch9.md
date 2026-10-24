@@ -231,3 +231,174 @@ There's one idea to carry out of this book, and it's been hiding under every cha
 * NIST AI 600-1, Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile (2024), on governance, evaluation, and risk management for generative AI systems: [https://doi.org/10.6028/NIST.AI.600-1](https://doi.org/10.6028/NIST.AI.600-1)
 * OWASP GenAI Security Project, LLM01:2025 Prompt Injection, on prompt-injection risks and mitigations: [https://genai.owasp.org/llmrisk/llm01-prompt-injection/](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
 * OWASP Top 10 for Agentic Applications 2026, on security risks and controls for autonomous and agentic systems: [https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
+
+
+---
+
+## 💡 讀者實戰筆記：活體記憶圖譜（Living Memory Graph）MCP 伺服器端到端實測
+
+全書的最後一個實驗並非隨著章節讀完就結束，而是以一座**動態活體記憶圖譜（Living Memory Graph）MCP 伺服器**的形式，作為全書致贈給每位工程師的「可延伸數位大腦」：
+
+* **第 3/4 章（RAG）**：回答「過去我們是如何解決類似問題的？」（歷史經驗檢索）。
+* **第 5/7 章（MCP）**：回答「叢集與儲存庫當前真實狀態是什麼？」（即時環境探查）。
+* **第 9 章（Living Memory Graph）**：回答「**團隊已經知道什麼？這些架構決策與概念如何相互關聯？**」（圖譜因果推論）。
+
+```mermaid
+graph LR
+    subgraph ClientLayer["客戶端與 AI 宿主 (MCP Host)"]
+        CLI["client_demo.py<br/>(stdio JSON-RPC 調用)"]
+        AgentHost["Claude Desktop / Cursor / Strands Agent<br/>(stdio 協議連接)"]
+    end
+
+    subgraph FastMCPServer["FastMCP 伺服器 (living-memory-graph)"]
+        Stats["graph_stats()<br/>(全書 30 節點 / 43 條邊統計)"]
+        Search["search_memory(query)<br/>(全文關鍵字語意索引)"]
+        Node["get_node(id)<br/>(節點全貌與入/出向關聯)"]
+        Neighbors["neighbors(id, depth)<br/>(外向多跳拓撲遍歷)"]
+        ListNodes["list_nodes(chapter, type)<br/>(按章節或分類瀏覽)"]
+    end
+
+    subgraph CuratedKnowledgeGraph["策展知識圖譜 (Context-as-a-Module)"]
+        GraphJSON["graph.json<br/>(PR 審查、Git 版本控制之知識本體)"]
+        
+        subgraph Concepts["核心概念與因果關係"]
+            C1["agentic-harness (Ch6)"]
+            C2["mcp (Ch3)"]
+            C3["prompt-injection (Ch8)"]
+            C4["model-guardrails (Ch8)"]
+            C5["downloadable-brains (Ch9)"]
+        end
+    end
+
+    CLI & AgentHost <-->|stdio JSON-RPC| FastMCPServer
+    FastMCPServer <--> GraphJSON
+    GraphJSON --- C1 & C2 & C3 & C4 & C5
+    C1 -->|depends_on| C2
+    C4 -->|mitigates| C3
+    C5 -->|depends_on| C1
+```
+
+---
+
+### 步驟 1：建立 Python 虛擬環境與安裝相依套件
+
+進入配套代碼目錄 `chapter-09/memory-graph/files/mcp`，建立虛擬環境並安裝標準 FastMCP 函式庫：
+```bash
+cd chapter-09/memory-graph/files/mcp
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+套件清單僅需 `mcp[cli]>=1.2.0`，輕量乾淨，專注於提供純粹標準的 stdio 服務。
+
+---
+
+### 步驟 2：圖譜統計與全景檢驗（`graph_stats`）
+
+透過配套的 `client_demo.py` 以 stdio 啟動伺服器並查詢圖譜元數據：
+```bash
+$ .venv/bin/python client_demo.py
+=== graph_stats() ===
+{
+  "version": "0.1.0",
+  "nodes": 30,
+  "edges": 43,
+  "by_chapter": {
+    "1": 3, "2": 2, "3": 4, "4": 2, "5": 2,
+    "6": 3, "7": 1, "8": 6, "9": 7
+  },
+  "by_type": {
+    "concept": 14,
+    "metric": 1,
+    "decision": 3,
+    "pattern": 9,
+    "tool": 1,
+    "threat": 2
+  }
+}
+```
+* **節點（Nodes）**：精準收錄全書 30 個核心主題，橫跨概念（concept）、決策（decision）、模式（pattern）、威脅（threat）與工具（tool）。
+* **關聯邊（Edges）**：定義了 43 條具備語意型別的指向關係（`depends_on`、`mitigates`、`relates_to`、`enables`、`caused_by`、`supersedes`）。
+
+---
+
+### 步驟 3：語意檢索與拓撲遍歷實測
+
+#### 1. 檢索「可下載數位大腦（Downloadable brains）」
+```bash
+$ .venv/bin/python client_demo.py --search "downloadable brains"
+```
+伺服器回傳：
+```json
+{
+  "id": "downloadable-brains",
+  "title": "Downloadable brains (curated context as a tradeable good)",
+  "type": "concept",
+  "chapter": 9,
+  "summary": "People will sell 'brains'—nothing more than curated context—that you download into an agent, and eventually a robot."
+}
+```
+
+#### 2. 調取特定節點及其因果脈絡（`get_node('downloadable-brains')`）
+```json
+{
+  "id": "downloadable-brains",
+  "type": "concept",
+  "title": "Downloadable brains (curated context as a tradeable good)",
+  "chapter": 9,
+  "summary": "People will sell 'brains'...",
+  "connections": [
+    { "rel": "relates_to", "direction": "in", "from": "memory-poisoning", "title": "Memory poisoning" },
+    { "rel": "depends_on", "direction": "out", "to": "context-as-module", "title": "Context-as-a-module" },
+    { "rel": "caused_by", "direction": "out", "to": "memory-poisoning", "title": "Memory poisoning" }
+  ]
+}
+```
+* 代理能清楚看到：可下載大腦在架構上依賴 `context-as-module`，但同時面臨第 8 章的 `memory-poisoning`（記憶投毒）威脅，因此必須配合數位簽章與來源追溯（Provenance）。
+
+#### 3. 遍歷「提示詞注入（Prompt injection）」的緩解措施
+調取 `model-guardrails` 節點：
+```bash
+$ .venv/bin/python client_demo.py --node model-guardrails
+```
+* 輸出關聯：
+  * `depends_on` ➜ `agentic-harness`（第 6 章代理線束）
+  * `mitigates` ➜ `prompt-injection`（第 8 章提示詞注入威脅）
+  * `relates_to` ➜ `identity-propagation`（第 8 章身分透傳）
+* 當工程師詢問代理排障或架構方案時，代理不需要瞎猜，而是沿著圖譜精準獲取「護欄如何緩解注入、以及它依賴何種身分機制」的完整推理路徑。
+
+#### 4. 全圖拓撲渲染（`render_graph.py`）
+執行 `render_graph.py` 可將整座圖譜編譯為 Mermaid 拓撲圖與 SVG 視覺化圖表，清晰展現全書從 Chapter 1 的「認知負擔」一路演進至 Chapter 9「組織升級」的完整思想脈絡。
+
+---
+
+### 步驟 4：連接至你自己的 AI 代理或 IDE
+
+在任何支援標準 stdio MCP 協議的客戶端（如 Claude Desktop、Cursor 或自建 Strands Agent）中加入設定：
+```json
+{
+  "mcpServers": {
+    "living-memory-graph": {
+      "command": "/absolute/path/to/chapter-09/memory-graph/files/mcp/.venv/bin/python",
+      "args": ["-m", "app.server"],
+      "cwd": "/absolute/path/to/chapter-09/memory-graph/files/mcp"
+    }
+  }
+}
+```
+現在直接向代理提問：
+> *「根據活體記憶圖譜，平台工程團隊應該如何防範記憶投毒？它與上下文即模組有何關聯？」*
+
+代理即可直接透過 `search_memory` 與 `get_node` 進行多跳推理，給出兼具理論深度與實踐依據的精準解答。
+
+---
+
+### 💡 核心工程避坑指南
+
+1. **共享大腦的「檸檬市場（Lemon Market）」風險**：
+   * 策展後的上下文（Curated Context）未來將如同 Docker 映像檔或 npm 套件一樣成為流通資產。然而，沒有來源審查的知識就是劇毒。正如第 8 章所強調，任何引入組織代理大腦的知識模組，必須像審查程式碼一樣嚴格審查 PR、驗證作者身分並鎖定特定 Git Commit 版本，防範惡意節點注入。
+2. **圖結構 vs. 純向量檢索（RAG）的互補性**：
+   * 純向量檢索擅長回答模糊的「語意相似文本」，但對「因果關係（A 是由 B 緩解的）」與「嚴格架構相依（C 依賴於 D）」極易產生推理斷層或幻覺。
+   * 將關鍵架構知識顯性化為**知識圖譜（Knowledge Graph）**，並透過 MCP 賦予代理圖遍歷能力，是打造確定性、高可靠企業級代理系統的終極武器。
+3. **全書完結寄語：去把所有不可言說的潛規則，統統顯性化！**
+   * 在 AI 驅動的平台工程中，失敗的從來不是模型能力，而是那些從未被文件化的隱性流程、從未認真做出的艱難決策、以及模糊不清的意圖。
+   * **讓正確安全的動作，成為機器阻力最小的動作**——這正是所有平台工程師在智慧時代最光榮的歷史使命。
