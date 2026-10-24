@@ -471,6 +471,71 @@ The same incident illustrates two different jobs: RAG explains how this class of
 
 Practical reference: step-by-step instructions for building all three labs, including the knowledge corpus, the local RAG pipeline, and the MCP server, are in the book's companion repository at [https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04](https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-04).
 
+> 💡 **Reader's Hands-on Lab Note: Local Environment Setup & Real Experimental Results (Labs 1–3)**
+> 
+> To validate the chapter's "RAG for accumulated wisdom, MCP for live system truth" architecture, we deployed and verified the full pipeline on a local kind cluster:
+> 
+> * **1. Shared Local Cluster (`00-cluster-setup`):**
+>   * Stood up a single-node Kubernetes cluster named `agentic-platform` (v1.33.1) via `kind`, mapping NodePorts `30080`, `30443`, `30900` (Postgres/pgvector), and `30901` to `localhost`.
+>   * Deployed Metrics Server (patched with `--kubelet-insecure-tls` for HPA) and ArgoCD v3.0.21.
+>   * *Troubleshooting note:* If local containers (e.g., k3d) occupy port `30443`, stop them first (`k3d cluster stop <name>`) so kind can bind the port without conflicts.
+> 
+> * **2. Lab 1: Knowledge Corpus (`chapter-04/1-knowledge-corpus/corpus/`):**
+>   * Structured into three categories: **Runbooks** (`crashloopbackoff.md`, `imagepullbackoff.md`, `oomkilled.md`), **Postmortems** (`2026-03-payment-processor-outage.md`), and **Blueprints** (`standard-service.md`, `tagging-and-labels.md`).
+>   * *Metadata value:* Standard YAML frontmatter headers (`type`, `title`, `owner`, `tags`) allow vector ingestion to preserve ownership and category tags for scoped RAG filtering.
+> 
+> * **3. Lab 2: Local RAG Pipeline (PostgreSQL + pgvector):**
+>   * Deployed `pgvector.yaml` to namespace `rag-demo`, accessible via NodePort `localhost:30900`.
+>   * Ran `python -m app.ingest` using the local CPU embedding model `BAAI/bge-small-en-v1.5` (dimension 384) to embed 18 chunks from 6 documents directly into pgvector—no cloud credentials required.
+>   * Querying `/ask` with `"Why does a pod end up in CrashLoopBackOff and how do I fix it?"` accurately retrieved:
+>     ```json
+>     {
+>       "question": "Why does a pod end up in CrashLoopBackOff and how do I fix it?",
+>       "sources": [
+>         {
+>           "source": "runbooks/crashloopbackoff.md",
+>           "doc_type": "runbook",
+>           "title": "Diagnosing and fixing CrashLoopBackOff",
+>           "owner": "platform-team",
+>           "score": 0.827
+>         },
+>         {
+>           "source": "postmortems/2026-03-payment-processor-outage.md",
+>           "doc_type": "postmortem",
+>           "title": "payment-processor CrashLoopBackOff after network-policy change",
+>           "owner": "payments-team",
+>           "score": 0.759
+>         }
+>       ]
+>     }
+>     ```
+>   * *Insight:* RAG retrieves both the official runbook (score 0.827) and past incident postmortems (score 0.759).
+> 
+> * **4. Lab 3: Live Cluster MCP Server (FastMCP over stdio):**
+>   * Deployed `broken-app.yaml` to namespace `broken-demo` (container exits with status 1, inducing a real `CrashLoopBackOff`).
+>   * Ran `python client_demo.py` to trigger `ListToolsRequest` and `CallToolRequest` (`list_deployments`). The live K8s API query returned:
+>     ```json
+>     {
+>       "namespace": "broken-demo",
+>       "name": "payment-processor",
+>       "desired": 1,
+>       "ready": 0,
+>       "available": 0,
+>       "healthy": false,
+>       "owner": "payments-team",
+>       "pod_reasons": [
+>         "CrashLoopBackOff",
+>         "Error"
+>       ]
+>     }
+>     ```
+>   * *Protocol takeaway:* MCP provides live, zero-latency system truth formatted as clean JSON. Deleting the broken app immediately reflects in the next MCP call without index re-generation.
+> 
+> * **5. Operational Synergy:**
+>   * **MCP** pinpoints *what is failing right now* (`payment-processor` in CrashLoopBackOff).
+>   * **RAG** prescribes *how to fix it* (`runbooks/crashloopbackoff.md` + postmortem root causes).
+>   Together, they form the diagnostic foundation for the autonomous operational agents in Chapter 7.
+
 
 ## Beyond MCP: the emerging agent-protocol landscape
 
