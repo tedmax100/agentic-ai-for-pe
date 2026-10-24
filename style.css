@@ -30,6 +30,8 @@ pre code{background:none;padding:0}
 .code .k,.code .kd,.code .kr,.code .nt{color:var(--k)}.code .s,.code .s1,.code .s2,.code .l{color:var(--s)}
 .code .m,.code .mi,.code .mf{color:var(--n)}.code .c,.code .c1,.code .cm{color:var(--c);font-style:italic}
 .tablewrap{overflow-x:auto;margin:1.5rem 0}
+.mermaid,pre.mermaid{background:var(--raised);border:1px solid var(--rule);border-radius:6px;padding:1.2rem;margin:1.5rem 0;text-align:center;overflow-x:auto;box-shadow:var(--shadow)}
+.mermaid svg,pre.mermaid svg{max-width:100%;height:auto}
 table{border-collapse:collapse;width:100%;font:.82rem/1.6 ui-monospace,Menlo,monospace}
 th,td{border:1px solid var(--rule);padding:.5rem .7rem;text-align:left;vertical-align:top}
 th{background:var(--raised);color:var(--accent)}tr:nth-child(even) td{background:rgba(128,100,50,.06)}

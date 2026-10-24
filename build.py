@@ -24,6 +24,11 @@ def load_chapters(dir_path):
     return chapters
 
 def render(body):
+    def repl_mermaid(m):
+        code = m.group(1).strip()
+        return f'\n<pre class="mermaid">\n{code}\n</pre>\n'
+    body = re.sub(r'```mermaid\s*\n(.*?)\n```', repl_mermaid, body, flags=re.DOTALL)
+
     md = markdown.Markdown(extensions=["tables", "fenced_code", "codehilite", "toc", "sane_lists"],
                            extension_configs={"codehilite": {"css_class": "code", "guess_lang": False, "noclasses": False},
                                               "toc": {"toc_depth": "2-3"}})
@@ -40,6 +45,16 @@ def page(title, inner, nav, lang="zh-TW", book_title=BOOK_ZH):
 <main>
 {inner}
 </main>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+const isDark = document.documentElement.dataset.theme === 'dark' || 
+  (!document.documentElement.dataset.theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+mermaid.initialize({{
+  startOnLoad: true,
+  theme: isDark ? 'dark' : 'default',
+  securityLevel: 'loose'
+}});
+</script>
 <script>
 (function(){{var b=document.getElementById('theme'),r=document.documentElement;
 try{{var s=localStorage.getItem('theme');if(s)r.dataset.theme=s}}catch(e){{}}
