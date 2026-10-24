@@ -367,7 +367,7 @@ Kubernetes 立即調度啟動了一個全新 Pod，但由於 PVC 的存在，`ME
 
 ---
 
-## 讀者實戰筆記：本地多代理維運架構與 GitOps 自癒全流程（Lab 0 ~ Lab 4 端到端驗證紀錄）
+## 讀者實戰筆記：本地多代理維運架構與 GitOps 自癒全流程（Lab 0 ~ Lab 5 全流程端到端驗證紀錄）
 
 為了將書中「從洞察邁向行動（From Insight to Action）」、「專精代理協同」與「受控 GitOps 自癒閉環」的架構哲學完全實體化，我們在本地 `kind` 叢集（`agentic-platform`）中完成了完整的端到端實機搭建與真實故障修復演練：
 
@@ -622,6 +622,66 @@ my-first-app-7d4bcb9f6b-jkd2n   1/1     Running   0          36s
    在 Backstage 對話視窗中輸入：
    - *「Find my-first-app in the catalog.」* ➜ Coordinator 透過 `search_catalog` 工具查得 `my-first-app` 隸屬於 `user:guest`。
    - *「Why is my-first-app failing? Inspect its live state.」* ➜ Coordinator 委派 Diagnostics 專家探查叢集，回報應用剛經過 ArgoCD 調諧，目前處於健康狀態（Healthy），並如實說明目前無需發起任何修復 PR。
+
+---
+
+### 步驟 6：Langfuse 鏈路追蹤與雜湊鏈稽核日誌（Lab 5）
+
+在多代理維運體系中，可觀測性必須同時滿足兩種維度：
+- **模型與工程維度（Langfuse Traces）**：追蹤每次對話的跨代理調度層次、Tool Span 延遲與參數細節。
+- **合規與法律維度（Hash-chained Audit Log）**：建立具備防篡改可證性的不可變雜湊鏈記錄，任何對歷史紀錄的修改都會瞬間破壞鏈路校驗。
+
+#### 1. 部署 Langfuse 觀測平台與 Postgres 資料庫
+- 建立 `langfuse` 命名空間與資料庫密鑰（`langfuse-db`、`langfuse-app`）。
+- 透過 PR #7 將 `langfuse/` 清單（Postgres 16 + Langfuse v2）與更新後的 `agent-runtime:0.7.5`（新增 `agent-audit` PVC 與 Langfuse 連線配置）交付至組件儲存庫。
+- ArgoCD 自動調諧部署出健康的 `langfuse` 服務（Port: `:3000`）。
+
+#### 2. 跨代理多輪意圖驗證與即時稽核記錄
+向 `agent-runtime:0.7.5` 提出一筆要求同時對比「Git 宣告清單」與「叢集即時狀態」的綜合請求：
+```bash
+curl -s --fail-with-body http://localhost:18080/invoke \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "intent": "Inspect my-first-app live state, then read its deployment manifest from Git and explain whether they agree. Do not change anything.",
+    "session_id": "lab5-observability"
+  }' | jq .
+```
+
+**Coordinator 同步調度兩大專精代理**：
+1. 委派 `diagnose_application` ➜ 診斷專家調用 `pods_list`、`pods_get`、`pods_log` 與 `events_list`。
+2. 委派 `review_configuration` ➜ GitOps 專家調用 `get_file_contents` 讀取 `my-first-app/k8s/deployment.yaml`。
+3. 綜合評估後回報：Git 宣告的 `nginx:alpine` 與叢集內運行的兩個 Pods 狀態完全一致，系統健康無異常。
+
+#### 3. 密碼學雜湊鏈（Hash Chain）完整性校驗
+在每一次工具調用前（`before_tool`）與調用後（`after_tool`），`AuditHook` 自動將調用時間戳、代理身分、工具名稱、參數或結果序列化，並計算 SHA-256 雜湊值寫入 `/state/audit/AUDIT.log`：
+```json
+{"agent_id":"coordinator","hash":"cea2a391...","phase":"before_tool","prev_hash":"00000000...","session_id":"lab5-observability","tool":"diagnose_application","tool_args":["application"],"ts":"2026-10-24T17:12:07.452+00:00"}
+{"agent_id":"coordinator","hash":"f5d4292c...","phase":"before_tool","prev_hash":"cea2a391...","session_id":"lab5-observability","tool":"review_configuration","tool_args":["application"],"ts":"2026-10-24T17:12:07.453+00:00"}
+{"agent_id":"diagnostics","hash":"11c46262...","phase":"before_tool","prev_hash":"f5d4292c...","session_id":"lab5-observability","tool":"pods_list","tool_args":["labelSelector"],"ts":"2026-10-24T17:12:12.242+00:00"}
+```
+我們直接在運行中的 `agent-runtime` Pod 內部執行密碼學鏈路校驗腳本：
+```bash
+$ kubectl -n agent-platform exec -i deploy/agent-runtime -- python3 - <<'PY'
+import hashlib
+import json
+
+previous = '0' * 64
+count = 0
+with open('/state/audit/AUDIT.log') as stream:
+    for count, line in enumerate(stream, 1):
+        record = json.loads(line)
+        digest = record.pop('hash')
+        body = json.dumps(record, sort_keys=True, separators=(',', ':'))
+        if record.get('prev_hash') != previous or hashlib.sha256(body.encode()).hexdigest() != digest:
+            raise SystemExit(f'Chain verification failed at record {count}')
+        previous = digest
+if not count:
+    raise SystemExit('Audit log is empty: invoke a tool first')
+print(f'Chain OK: {count} records')
+PY
+Chain OK: 26 records
+```
+✅ **26 筆工具調用審計紀錄全數通過 SHA-256 密碼學前向鏈路校驗，無任何竄改或斷鏈！**
 
 ---
 
