@@ -363,9 +363,290 @@ Keeping the write path in the template rather than in the assistant is a deliber
 
 `[github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-05/1-backstage-setup](https://github.com/PacktPublishing/Agentic-AI-for-Platform-Engineering/tree/main/chapter-05/1-backstage-setup)`
 
-
-
 This progression demonstrates how conversational interfaces fit naturally into platform engineering when introduced incrementally. Starting from a standard Backstage and GitOps setup, we add conversational capabilities, enrich them with organizational knowledge, extend them with real-time platform awareness, and finally enable them to propose governed changes. The result is not a replacement for platform workflows, but an intuitive layer on top of them that makes the platform easier to understand, safer to operate, and more accessible to developers.
+
+## 💡 讀者實戰筆記：本地環境搭建與真實驗證紀錄（Lab 1 ~ Lab 4 全流程）
+
+為了徹底驗證書中「意圖驅動、GitOps 落地、MCP 唯讀洞察」的架構哲學，我們在本地環境進行了端到端的實機搭建與真實呼叫驗證：
+
+```mermaid
+flowchart TD
+    subgraph Clients["客戶端（兩種途徑）"]
+        Chat["途徑 1：Backstage Chat Assistant<br/>(前端聊天視窗 /assistant/general)"]
+        External["途徑 2：外部 MCP 客戶端 / CLI<br/>(Streamable HTTP JSON-RPC :7007)"]
+    end
+
+    subgraph BackstageBackend["Backstage Backend (:7007)"]
+        Registry["Backstage Actions Registry<br/>(@backstage/plugin-mcp-actions-backend)"]
+        Module["Kubectl Actions Module<br/>(kubectl-mcp-actions.ts)"]
+        CatalogAct["Catalog Core Actions<br/>(search-catalog / get-catalog-entity)"]
+        LangGraphAgent["LangGraph React Agent<br/>(@aws/genai-plugin-langgraph-agent)"]
+    end
+
+    subgraph LLMProvider["本機推論引擎 (:11434)"]
+        Ollama["Local Ollama<br/>qwen2.5:7b (原生支援 Tool Calling)"]
+    end
+
+    subgraph Cluster["Kubernetes (kind: agentic-platform)"]
+        K8s["kubectl binary<br/>(Pods, Deployments, Services, Describe)"]
+        Argo["ArgoCD v3.0.21<br/>(ApplicationSet: backstage-app-discovery)"]
+        MyFirstApp["my-first-app<br/>(2 Pods + Service + HPA)"]
+    end
+
+    subgraph GitRepository["Git 儲存庫 (GitHub)"]
+        Repo["tedmax100/backstage-components<br/>(main 分支 / PR #1)"]
+    end
+
+    Chat -->|程序內調用| LangGraphAgent
+    LangGraphAgent <-->|ChatOllama| Ollama
+    LangGraphAgent -->|查詢工具| Registry
+    Registry --> Module
+    Registry --> CatalogAct
+    Module -->|執行查詢| K8s
+    External -->|HTTP POST /api/mcp-actions/v1| Registry
+
+    Chat -.->|Scaffolder 填表| Repo
+    Repo -->|自動偵測| Argo
+    Argo -->|GitOps 同步部署| MyFirstApp
+```
+
+---
+
+### 1. Lab 1：Backstage 入口網站與 GitOps 自助交付閉環（1-backstage-setup）
+
+#### 嚴苛版本約束與環境初始化
+Backstage 演進迅速，新版常伴隨不相容變更。本實驗嚴格遵循生產基準版本：
+- **Backstage**：`@backstage/create-app@0.7.9`，所有 `@backstage/*` 套件透過 `package-resolutions.json` 強制鎖定在 `1.48.0`。
+- **Runtime**：Node.js v22.19.0，Yarn 4.4.1（透過 Corepack 啟用）。
+- **外部儲存庫**：建立公開 GitHub 儲存庫 `tedmax100/backstage-components`，並將具備 PR 權限的 GitHub Token 寫入 `app-config.local.yaml`。
+
+#### 註冊範本與 ArgoCD ApplicationSet
+1. 將 `files/webapp-template` 複製至 `my-backstage-app/examples/webapp-template`，並於 `app-config.yaml` 註冊：
+```yaml
+catalog:
+  locations:
+    - type: file
+      target: ../../examples/webapp-template/template.yaml
+      rules:
+        - allow: [Template]
+    - type: url
+      target: https://github.com/tedmax100/backstage-components/blob/main/*/catalog-info.yaml
+      rules:
+        - allow: [Component]
+```
+2. 將 `argocd-applicationset.yaml` 內的帳號替換為 `tedmax100` 並套用至叢集 `argocd` 命名空間。其透過 Git 檔案產生器自動監聽 `*/argocd/application.yaml`。
+
+#### 端到端實操驗證
+1. 啟動 Backstage：`NODE_OPTIONS=--no-node-snapshot yarn start`。
+2. 訪問 `http://localhost:3000/create`，選擇 **Web App with Kubernetes Deployment** 範本。
+3. 填入參數：`name: my-first-app`、`namespace: my-first-app`、`repoOwner: tedmax100`、`repoName: backstage-components`。
+4. Backstage 後端自動渲染出 9 個檔案，並透過 GitHub API 自動建立 Pull Request `#1 (feat: Add my-first-app)`。
+5. 審核並合併 PR 後，ArgoCD ApplicationSet 自動觸發調諧。
+
+#### 踩坑提醒（ArgoCD 部署與快取同步）：
+- **命名空間對齊**：若表單未變更 namespace，預設會產生 `namespace: default`，這會與 ApplicationSet 宣告的目標命名空間 `{{path[0]}}` (`my-first-app`) 產生衝突。合併前務必確認清單內的 namespace 一致。
+- **Repo-Server 快取清除**：ArgoCD 預設輪詢間隔為 3 分鐘，且 `argocd-repo-server` 會在 Redis 中快取 Git 目錄。若合併後欲立即生效，可連線至 `argocd-redis` 執行 `redis-cli -a <PASSWORD> flushall` 並重啟 `argocd-applicationset-controller`。
+
+#### 真實部署驗證：
+```bash
+$ kubectl get all,cm,hpa -n my-first-app
+```
+```text
+NAME                                READY   STATUS    RESTARTS   AGE
+pod/my-first-app-6b4f5594b6-c6h26   1/1     Running   0          93s
+pod/my-first-app-6b4f5594b6-tvwrh   1/1     Running   0          93s
+
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+service/my-first-app   ClusterIP   10.96.132.107   <none>        80/TCP    93s
+
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/my-first-app   2/2     2            2           93s
+
+NAME                                                   REFERENCE                 TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/my-first-app-hpa   Deployment/my-first-app   cpu: <unknown>/70%   2         10        2          93s
+```
+內部端點驗證成功回傳：
+```html
+<div class="container">
+  <h1>my-first-app</h1>
+  <p>My first Backstage-deployed app</p>
+  <p><strong>Namespace:</strong> my-first-app</p>
+  <p><strong>Owner:</strong> user:guest</p>
+</div>
+```
+
+---
+
+### 2. Lab 2：整合 AI 對話助理與本地 Ollama（2-add-chat-assistant）
+
+#### 外掛相依性與架構接合
+- **後端外掛**：
+  ```bash
+  yarn workspace backend add \
+    @aws/genai-plugin-for-backstage-backend \
+    @aws/genai-plugin-langgraph-agent-for-backstage \
+    @backstage/plugin-mcp-actions-backend
+  ```
+- **前端外掛**：
+  ```bash
+  yarn workspace app add @aws/genai-plugin-for-backstage
+  ```
+- **後端註冊順序至關重要**（`packages/backend/src/index.ts`）：
+  `mcp-actions-backend` 必須註冊於 `aws-genai` **之前**，因為 GenAI 外掛的啟動生命週期鉤子需要解析 `alpha.core.actionsRegistry` 服務參照：
+  ```typescript
+  // 必須置於 aws-genai 之前
+  backend.add(import('@backstage/plugin-mcp-actions-backend'));
+  backend.add(import('@aws/genai-plugin-for-backstage-backend'));
+  backend.add(import('@aws/genai-plugin-langgraph-agent-for-backstage'));
+  ```
+
+#### 本地 Ollama 模型直連（零雲端 API 依賴）
+不同於原書依賴 AWS Bedrock，我們利用 `@aws/genai-plugin-langgraph-agent-for-backstage` 內建的 Ollama 整合能力，在 `app-config.yaml` 配置本機運行的 `qwen2.5:7b`：
+```yaml
+genai:
+  agents:
+    general:
+      description: General chat assistant
+      prompt: >
+        You are an expert in platform engineering and answer questions in a succinct and easy to understand manner.
+        Answers should always be well-structured and use well-formed Markdown.
+        The current user is {username} and you can provide that information if asked.
+      langgraph:
+        messagesMaxTokens: 32000
+        ollama:
+          model: 'qwen2.5:7b'
+          baseUrl: 'http://127.0.0.1:11434'
+```
+
+#### 前端介面與實機測試：
+- 在 `packages/app/src/App.tsx` 註冊 `<Route path="/assistant/:agentName" element={<AgentChatPage />} />`。
+- 在 `packages/app/src/components/Root/Root.tsx` 側邊欄掛載 `Chat Assistant`。
+- 向助理提問："What is Backstage and how does it help platform engineering?"。
+- 模型成功透過 LangGraph 代理串流輸出條理清晰的 Markdown 架構解釋。
+- **當前邊界確認**：此階段助理僅具備通用程式與雲原生知識，尚未被賦予存取目錄或叢集的工具，無法回答「我們系統有哪些服務？」。
+
+---
+
+### 3. Lab 3：掛載 Backstage Catalog Actions 注入組織靜態結構（3-add-catalog-actions）
+
+#### 啟用目錄動作來源
+在 `app-config.yaml` 啟用動作註冊來源並將目錄工具指派給代理：
+```yaml
+backend:
+  actions:
+    pluginSources:
+      - 'catalog'      # 啟用 Backstage 目錄原生動作
+      - 'aws-genai'    # 啟用 GenAI 核心動作
+
+genai:
+  registerCoreActions: true
+  agents:
+    general:
+      actions:
+        - get-catalog-entity  # 取得特定實體
+        - search-catalog      # 跨目錄全文檢索
+        - search-techdocs     # 搜尋技術文檔
+```
+
+#### 實測問答與「零幻覺」底層原理解密
+提問實測：
+```text
+User: "Find all services owned by guest"
+Assistant: "It appears that there are no services currently owned by guest in the catalog.
+Would you like to perform another search or check for other types of entities?"
+```
+
+#### 為什麼回傳「找不到」反而證明了系統的嚴謹性？
+查看後端即時日誌：
+```text
+search info Search request received: term="service AND owner:guest", filters={"kind":"service"}
+POST /api/aws-genai/.backstage/actions/v1/actions/aws-genai:search-catalog/invoke 200 90
+```
+- **真實工具調用**：模型確實自動呼叫了 `aws-genai:search-catalog` 工具。
+- **嚴格基於事實**：在 Backstage 的資料模型規範中，實體的類別（`kind`）只有 `Component`、`API`、`System`、`Template`，根本沒有 `kind: service`。Lab 1 部署的 `my-first-app` 實際定義為 `kind: Component, spec.type: website`。
+- **拒絕憑空捏造**：模型嚴格依據檢索到的空結果誠實回答，展現了 Grounded AI（有憑有據的 AI）的核心特徵。當改為提問 `What components do we have in the catalog?` 時，助理隨即精確列出了 `my-first-app` 與 `example-website`。
+
+---
+
+### 4. Lab 4：掛載 Kubernetes MCP Actions 洞察活體運行真相（4-add-kubernetes-actions）
+
+#### 實作 Kubectl 動作模組
+1. 安裝 Schema 驗證套件：`yarn workspace backend add zod`。
+2. 建立 `packages/backend/src/modules/kubectl-mcp-actions.ts`，向 Actions Registry 註冊 4 個唯讀動作：
+   - `kubectl_get_pods`：取得指定命名空間的 Pod 清單（JSON）。
+   - `kubectl_get_deployments`：取得 Deployments 清單。
+   - `kubectl_get_services`：取得 Services 清單。
+   - `kubectl_describe_pod`：取得特定 Pod 的詳細診斷資訊。
+3. 於 `packages/backend/src/index.ts` 註冊模組：
+   ```typescript
+   backend.add(import('./modules/kubectl-mcp-actions'));
+   ```
+4. 於 `app-config.yaml` 指派動作：
+   ```yaml
+   backend:
+     actions:
+       pluginSources:
+         - 'catalog'
+         - 'aws-genai'
+         - 'mcp-actions'
+
+   genai:
+     agents:
+       general:
+         actions:
+           - get-catalog-entity
+           - search-catalog
+           - search-techdocs
+           - kubectl_get_pods
+           - kubectl_get_deployments
+           - kubectl_get_services
+           - kubectl_describe_pod
+   ```
+
+#### 雙重存取機制（Two Doors, Same Contract）驗證
+Backstage MCP Actions 後端將註冊的動作同時暴露為兩種介面：
+1. **途徑 1：內部程序內調用**：前端聊天助理透過 LangGraph 直接在 Node.js 程序內部調用。
+2. **途徑 2：外部 HTTP MCP 客戶端**：外部 Agent 或 CLI 可透過標準 MCP 協議訪問 `http://localhost:7007/api/mcp-actions/v1`。
+
+#### 外部 MCP 客戶端呼叫實測（HTTP JSON-RPC 2.0）：
+```bash
+# 實機調用 kubectl_get_pods 查詢 my-first-app
+curl -s -X POST http://localhost:7007/api/mcp-actions/v1 \
+  -H "Authorization: Bearer test-mcp-client-token-secret-123456" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"kubectl_get_pods","arguments":{"namespace":"my-first-app"}}}'
+```
+成功接收到叢集 live 回傳的 `my-first-app-6b4f5594b6-c6h26` 完整 Pod 定義！
+
+#### 跨章節神作聯動：真實活體排障診斷驗證
+在聊天視窗中詢問第四章留下的故障情境：
+```text
+User: "What pods are in the broken-demo namespace, and why are they not healthy?"
+```
+
+AI 助理即時回覆：
+```text
+The pod named payment-processor-8669f87785-zrfjk in the broken-demo namespace is not healthy 
+because it is in a CrashLoopBackOff state.
+
+Key details:
+- Pod Name: payment-processor-8669f87785-zrfjk
+- State: Terminated with exit code 1
+- Error Message: The container command is set to:
+  echo 'connecting to database...'; sleep 2; echo 'connection timed out'; exit 1
+  This indicates the container timed out trying to connect to a database.
+```
+**驗證收穫**：AI 助理自動呼叫了 `kubectl_describe_pod`，精準讀取了 Pod 內部的具體啟動參數與錯誤碼，並在幾秒鐘內給出根本原因分析！
+
+---
+
+### 💡 結論：對話式介面的架構防線
+
+1. **對話層是 GitOps 的親和介面，絕非直接寫入的後門**：
+   變更必須始終保持為「受控的 Pull Request 提案」，交由人類審查與 GitOps 控制器同步，嚴禁賦予對話視窗直接 `kubectl apply` 的危險寫入權限。
+2. **MCP 是模型的「感官神經」**：
+   藉由 MCP Actions Registry，我們在維持最小權限原則（唯讀工具）的前提下，賦予了本地開源模型深度洞察線上叢集運行真相的超能力。
 
 # Limitations of current AI tools in platform engineering
 
