@@ -40,6 +40,8 @@ th{background:var(--raised);color:var(--accent)}tr:nth-child(even) td{background
 .toc .chap>a{display:block;font-size:1.3rem;font-weight:600;text-decoration:none;margin-top:2rem}
 .toc .chap.ex>a{margin-top:1.2rem;font-size:1.15rem}
 .toc .chap.ex .num{color:var(--k)}
+.toc .chap.preface>a, .toc .chap.epilogue>a{margin-top:2.2rem;font-size:1.35rem;font-weight:700}
+.toc .chap.preface .num, .toc .chap.epilogue .num{color:var(--accent);font-weight:700;letter-spacing:.05em}
 .toc .num{font:.9rem ui-monospace,monospace;color:var(--accent);margin-right:.8rem}
 .toc ul{list-style:none;margin:.3rem 0 0 2.2rem;padding:0;font-size:.92rem;line-height:1.7}
 .toc ul a{color:var(--soft);text-decoration:none}.toc ul a:hover{color:var(--accent)}

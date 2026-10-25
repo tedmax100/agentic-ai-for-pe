@@ -4,6 +4,7 @@
 
 ### 繁體中文版 (Traditional Chinese - 預設)
 - [中文目錄](https://tedmax100.github.io/agentic-ai-for-pe/)
+- [全書導讀：平台工程與可靠性工程的雙螺旋——兼論 Backstage 與 OpenChoreo 的核心基石地位](https://tedmax100.github.io/agentic-ai-for-pe/preface.html)
 - [第 1 章：平台工程與開發者體驗](https://tedmax100.github.io/agentic-ai-for-pe/ch01.html)
 - [第 2 章：AIOps：平台工程前與平台工程後的視角](https://tedmax100.github.io/agentic-ai-for-pe/ch02.html)
 - [第 3 章：平台團隊的生成式 AI 基礎技術](https://tedmax100.github.io/agentic-ai-for-pe/ch03.html)
@@ -20,9 +21,11 @@
 - [第 10 章：解鎖你的專屬福利](https://tedmax100.github.io/agentic-ai-for-pe/ch10.html)
 - [第 11 章：Backstage：內部開發者門戶核心與平台工程實戰](https://tedmax100.github.io/agentic-ai-for-pe/ch11.html)
 - [第 12 章：OpenChoreo：CNCF 雲原生內部開發者平台與 Agentic AI 落地實踐](https://tedmax100.github.io/agentic-ai-for-pe/ch12.html)
+- [全書結語：邁向認知自適應平台——企業落地成熟度演進藍圖](https://tedmax100.github.io/agentic-ai-for-pe/epilogue.html)
 
 ### 英文原版 (English)
 - [Contents](https://tedmax100.github.io/agentic-ai-for-pe/en/)
+- [Foreword: The Dual-Helix of Platform & Reliability Engineering (With Backstage and OpenChoreo)](https://tedmax100.github.io/agentic-ai-for-pe/en/preface.html)
 - [Chapter 1: Platform Engineering and Developer Experience](https://tedmax100.github.io/agentic-ai-for-pe/en/ch01.html)
 - [Chapter 2: AIOps: A Pre- and Post-Platform Engineering Perspective](https://tedmax100.github.io/agentic-ai-for-pe/en/ch02.html)
 - [Chapter 3: Foundation of Generative AI for Platform Teams](https://tedmax100.github.io/agentic-ai-for-pe/en/ch03.html)
@@ -39,6 +42,7 @@
 - [Chapter 10: Unlock Your Exclusive Benefits](https://tedmax100.github.io/agentic-ai-for-pe/en/ch10.html)
 - [Chapter 11: Backstage: The Core Internal Developer Portal and Platform Engineering Practice](https://tedmax100.github.io/agentic-ai-for-pe/en/ch11.html)
 - [Chapter 12: OpenChoreo: CNCF Cloud-Native Internal Developer Platform and Agentic AI Practice](https://tedmax100.github.io/agentic-ai-for-pe/en/ch12.html)
+- [Epilogue: Toward Cognitive Adaptive Platforms — An Enterprise Maturity Roadmap](https://tedmax100.github.io/agentic-ai-for-pe/en/epilogue.html)
 
 ## 建置
 

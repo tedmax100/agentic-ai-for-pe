@@ -12,6 +12,10 @@ BOOK_EN = "Agentic AI for Platform Engineering"
 BOOK_ZH = "Agentic AI for Platform Engineering"
 
 def parse_chapter_stem(stem):
+    if stem in ("preface", "ch00", "ch00_preface"):
+        return (0, 0)
+    if stem in ("epilogue", "ch99", "conclusion"):
+        return (99, 0)
     m = re.match(r"ch(\d+)(?:[_\-]ex)?", stem)
     if not m:
         return (999, 0)
@@ -21,17 +25,36 @@ def parse_chapter_stem(stem):
 
 def load_chapters(dir_path):
     chapters = []
-    for p in sorted(dir_path.glob("ch*.md"), key=lambda p: parse_chapter_stem(p.stem)):
+    files = [p for p in dir_path.glob("*.md") if p.stem.startswith("ch") or p.stem in ("preface", "epilogue")]
+    for p in sorted(files, key=lambda p: parse_chapter_stem(p.stem)):
         num, is_ex = parse_chapter_stem(p.stem)
         text = p.read_text(encoding="utf-8")
-        text = re.sub(r"\A#\s*[\d\w\-]+\s*\n", "", text).lstrip()  # drop "# 3" or "# 4-EX" chapter-number line
+        text = re.sub(r"\A#\s*[\d\w\-]+\s*\n", "", text).lstrip()  # drop "# 3" or "# PREFACE" or "# EPILOGUE"
         m = re.match(r"#\s+(.+)", text)
         title = m.group(1).strip()
         body = text[m.end():]
-        file_name = f"ch{num:02d}_ex.html" if is_ex else f"ch{num:02d}.html"
-        label_zh = f"第 {num} 章 延伸實踐" if is_ex else f"第 {num} 章"
-        label_en = f"Chapter {num} Extension" if is_ex else f"Chapter {num}"
-        num_label = f"{num:02d}-EX" if is_ex else f"{num:02d}"
+        if num == 0:
+            file_name = "preface.html"
+            label_zh = "全書導讀"
+            label_en = "Foreword"
+            num_label_zh = "導讀"
+            num_label_en = "PREFACE"
+            cls_name = "chap preface"
+        elif num == 99:
+            file_name = "epilogue.html"
+            label_zh = "全書結語"
+            label_en = "Epilogue"
+            num_label_zh = "結語"
+            num_label_en = "EPILOGUE"
+            cls_name = "chap epilogue"
+        else:
+            file_name = f"ch{num:02d}_ex.html" if is_ex else f"ch{num:02d}.html"
+            label_zh = f"第 {num} 章 延伸實踐" if is_ex else f"第 {num} 章"
+            label_en = f"Chapter {num} Extension" if is_ex else f"Chapter {num}"
+            num_label_zh = f"{num:02d}-EX" if is_ex else f"{num:02d}"
+            num_label_en = f"{num:02d}-EX" if is_ex else f"{num:02d}"
+            cls_name = "chap ex" if is_ex else "chap"
+
         chapters.append({
             "num": num,
             "is_ex": is_ex,
@@ -40,7 +63,9 @@ def load_chapters(dir_path):
             "file": file_name,
             "label_zh": label_zh,
             "label_en": label_en,
-            "num_label": num_label
+            "num_label_zh": num_label_zh,
+            "num_label_en": num_label_en,
+            "cls_name": cls_name
         })
     return chapters
 
@@ -137,8 +162,8 @@ items_zh = []
 for c in chapters_zh:
     _, toc = render(c["body"])
     subs = "".join(f'<li><a href="{c["file"]}#{t["id"]}">{html.escape(t["name"])}</a></li>' for t in toc)
-    cls = "chap ex" if c["is_ex"] else "chap"
-    items_zh.append(f'<li class="{cls}"><a href="{c["file"]}"><span class="num">{c["num_label"]}</span>{html.escape(c["title"])}</a><ul>{subs}</ul></li>')
+    cls = c["cls_name"]
+    items_zh.append(f'<li class="{cls}"><a href="{c["file"]}"><span class="num">{c["num_label_zh"]}</span>{html.escape(c["title"])}</a><ul>{subs}</ul></li>')
 
 idx_zh_nav = make_nav(None, files_zh[0] if files_zh else None, "en/index.html", "English", index_url="index.html", prev_label="← 上一章", next_label="開始閱讀 →", toc_label="目錄")
 idx_zh = f"""<header class="masthead"><span class="eyebrow">線上閱讀版</span>
@@ -174,8 +199,8 @@ items_en = []
 for c in chapters_en:
     _, toc = render(c["body"])
     subs = "".join(f'<li><a href="{c["file"]}#{t["id"]}">{html.escape(t["name"])}</a></li>' for t in toc)
-    cls = "chap ex" if c["is_ex"] else "chap"
-    items_en.append(f'<li class="{cls}"><a href="{c["file"]}"><span class="num">{c["num_label"]}</span>{html.escape(c["title"])}</a><ul>{subs}</ul></li>')
+    cls = c["cls_name"]
+    items_en.append(f'<li class="{cls}"><a href="{c["file"]}"><span class="num">{c["num_label_en"]}</span>{html.escape(c["title"])}</a><ul>{subs}</ul></li>')
 
 idx_en_nav = make_nav(None, files_en[0] if files_en else None, "../index.html", "中文", index_url="index.html", prev_label="← Previous", next_label="Start Reading →", toc_label="Contents")
 idx_en = f"""<header class="masthead"><span class="eyebrow">Online Reader</span>
