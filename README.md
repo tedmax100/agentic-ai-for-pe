@@ -14,6 +14,7 @@
 - [第 8 章：安全性、合規性與治理](https://tedmax100.github.io/agentic-ai-for-pe/ch08.html)
 - [第 9 章：未來發展方向](https://tedmax100.github.io/agentic-ai-for-pe/ch09.html)
 - [第 10 章：解鎖你的專屬福利](https://tedmax100.github.io/agentic-ai-for-pe/ch10.html)
+- [第 11 章：Backstage：內部開發者門戶核心與平台工程實戰](https://tedmax100.github.io/agentic-ai-for-pe/ch11.html)
 
 ### 英文原版 (English)
 - [Contents](https://tedmax100.github.io/agentic-ai-for-pe/en/)
@@ -27,6 +28,7 @@
 - [Chapter 8: Security, Compliance, and Governance](https://tedmax100.github.io/agentic-ai-for-pe/en/ch08.html)
 - [Chapter 9: Future Directions](https://tedmax100.github.io/agentic-ai-for-pe/en/ch09.html)
 - [Chapter 10: Unlock Your Exclusive Benefits](https://tedmax100.github.io/agentic-ai-for-pe/en/ch10.html)
+- [Chapter 11: Backstage: The Core Internal Developer Portal and Platform Engineering Practice](https://tedmax100.github.io/agentic-ai-for-pe/en/ch11.html)
 
 ## 建置
 
