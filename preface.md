@@ -115,13 +115,14 @@ flowchart TD
         C1 --> C2 --> C3 --> C4 --> C4EX
     end
 
-    subgraph Part2["[Phase 2] Interaction & Autonomous Self-Healing (Ch 5 - 7 + 07-EX)"]
+    subgraph Part2["[Phase 2] Interaction & Autonomous Self-Healing (Ch 5 - 7 + 06-EX + 07-EX)"]
         direction TB
         C5["Ch 5: Conversational Interfaces"]
         C6["Ch 6: Agentic AI & Autonomous Behavior"]
+        C6EX["★ Ch 06-EX: Four Orthogonal Planes & Agentic Architecture Syntax (ARE Core)"]
         C7["Ch 7: Operational Agents in Production"]
         C7EX["★ Ch 07-EX: Incident Response Pipeline & Healing Practice (ARE Core)"]
-        C5 --> C6 --> C7 --> C7EX
+        C5 --> C6 --> C6EX --> C7 --> C7EX
     end
 
     subgraph Part3["[Phase 3] Governance, Safety & Frontiers (Ch 8 - 10 + 08-EX + 09-EX)"]
@@ -147,11 +148,11 @@ flowchart TD
 ### 🎯 Recommended Reading Pathways by Role:
 
 * **For Platform Architects**:
-  - Focus Path: `Ch 1` ➔ `Ch 4` ➔ `Ch 11 (Backstage)` ➔ `Ch 12 (OpenChoreo)` ➔ `Ch 08-EX (Autonomy Ladder)`.
+  - Focus Path: `Ch 1` ➔ `Ch 4` ➔ `Ch 06-EX (Four Orthogonal Planes)` ➔ `Ch 11 (Backstage)` ➔ `Ch 12 (OpenChoreo)` ➔ `Ch 08-EX (Autonomy Ladder)`.
   - Core Goal: Establish single-pane-of-glass portals, decouple developer and platform planes, and enforce deterministic guardrails around AI tool calls.
 
 * **For Site Reliability Engineers & Operations Leads**:
-  - Focus Path: `Ch 04-EX (Decision-Grade Telemetry)` ➔ `Ch 7` ➔ `Ch 07-EX (Incident Response Pipeline)` ➔ `Ch 09-EX (Autonomous Chaos & Digital Twins)`.
+  - Focus Path: `Ch 04-EX (Decision-Grade Telemetry)` ➔ `Ch 06-EX (Plane Syntax)` ➔ `Ch 7` ➔ `Ch 07-EX (Incident Response Pipeline)` ➔ `Ch 09-EX (Autonomous Chaos & Digital Twins)`.
   - Core Goal: Master the DRAL loop, distinguish transient mitigations from permanent remediation, employ TTL-bounded MCP tools, and simulate edge cases in digital twins.
 
 * **For Engineering Executives (VPs of Engineering / CTOs)**:

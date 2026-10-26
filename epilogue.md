@@ -8,7 +8,7 @@ Looking back across our journey:
 
 * We began in Chapters 1 and 2 by dismantling the legacy silos of AIOps and developer friction, establishing the core doctrine of treating the platform as a product;
 * In Chapters 3, 4, and 4-EX, we elevated organizational knowledge into causal, "Decision-Grade Telemetry" and the closed DRAL autonomous loop;
-* In Chapters 5, 6, 7, and 7-EX, we constructed conversational interfaces, the Model Context Protocol (MCP), and production operational agents, sharply dividing machine-speed transient mitigations from human-reviewed permanent remediations;
+* In Chapters 5, 6, 6-EX, 7, and 7-EX, we established the structural syntax of the four orthogonal planes (Signal, Reasoning, Execution, Governance), constructed conversational interfaces, the Model Context Protocol (MCP), and production operational agents, sharply dividing machine-speed transient mitigations from human-reviewed permanent remediations;
 * In Chapters 8 and 8-EX, we confronted the mortal peril of out-of-control autonomous agents, erecting L0-through-L4 autonomy ladders, hard blast radius caps, and dual-key authorization interlocks;
 * In Chapters 9 and 9-EX, we propelled platforms from passive mitigation to proactive antifragility through hypothesis-driven micro-chaos experiments and digital twin shadow rehearsals;
 * In Chapters 11 and 12, we grounded this theoretical edifice upon the two flagship open-source foundations of the cloud-native ecosystem—Spotify Backstage (the portal and perception layer) and CNCF OpenChoreo (the multi-plane execution substrate).

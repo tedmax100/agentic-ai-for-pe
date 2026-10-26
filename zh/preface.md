@@ -115,13 +115,14 @@ flowchart TD
         C1 --> C2 --> C3 --> C4 --> C4EX
     end
 
-    subgraph Part2["【第 2 階段】對話交互與維運自癒 (Ch 5 - 7 + 07-EX)"]
+    subgraph Part2["【第 2 階段】對話交互與維運自癒 (Ch 5 - 7 + 06-EX + 07-EX)"]
         direction TB
         C5["Ch 5: 對話式介面設計"]
         C6["Ch 6: 代理式 AI 與自主行為"]
+        C6EX["★ Ch 06-EX: 四大正交平面與代理架構語法 (ARE 核心)"]
         C7["Ch 7: 生產環境中的維運代理"]
         C7EX["★ Ch 07-EX: 事故管線與生產自癒實戰 (ARE 核心)"]
-        C5 --> C6 --> C7 --> C7EX
+        C5 --> C6 --> C6EX --> C7 --> C7EX
     end
 
     subgraph Part3["【第 3 階段】安全邊界與前沿演進 (Ch 8 - 10 + 08-EX + 09-EX)"]
@@ -147,11 +148,11 @@ flowchart TD
 ### 🎯 針對不同角色的推薦閱讀路徑：
 
 * **如果妳/你是平台工程架構師（Platform Architect）**：
-  - 推薦優先研讀：`Ch 1` ➔ `Ch 4` ➔ `Ch 11（Backstage）` ➔ `Ch 12（OpenChoreo）` ➔ `Ch 08-EX（自主階梯）`。
+  - 推薦優先研讀：`Ch 1` ➔ `Ch 4` ➔ `Ch 06-EX（四大正交平面）` ➔ `Ch 11（Backstage）` ➔ `Ch 12（OpenChoreo）` ➔ `Ch 08-EX（自主階梯）`。
   - 重點關注：如何建構開發者單一入口、如何透過多平面架構降低心智負擔，以及如何用確定性代碼控制代理權限。
 
 * **如果妳/你是站點可靠性工程師（SRE / Operations Lead）**：
-  - 推薦優先研讀：`Ch 04-EX（決策級遙測）` ➔ `Ch 7` ➔ `Ch 07-EX（事故應變管線）` ➔ `Ch 09-EX（主動混沌與數位分身）`。
+  - 推薦優先研讀：`Ch 04-EX（決策級遙測）` ➔ `Ch 06-EX（四平面語法）` ➔ `Ch 7` ➔ `Ch 07-EX（事故應變管線）` ➔ `Ch 09-EX（主動混沌與數位分身）`。
   - 重點關注：DRAL 閉環、暫態緩解 vs 永久修復、TTL-bounded MCP 工具，以及如何在影子環境中進行 What-If 演練。
 
 * **如果妳/你是工程副總裁或技術長（VP of Eng / CTO）**：
