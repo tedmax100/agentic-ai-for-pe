@@ -52,9 +52,9 @@ flowchart TD
 ### 假設驅動（Hypothesis-Driven）而非隨機破壞
 AI 代理在發起混沌實驗前，必須嚴格向審批系統提交結構化的「科學假設」：
 
-* **前置條件（Steady State）**：當前系統處於健康基準線（99.9% 請求延遲 $\le 120\text{ms}$，錯誤率 $\le 0.01\%$）。
-* **擾動變量（Fault Injection）**：對 `Order-Service` 到 `Payment-Gateway` 的 gRPC 呼叫注入 $350\text{ms}$ 的人工延遲。
-* **預期行為（Expected Behavior）**：`Order-Service` 的本機端斷路器應當在第 3 次超時後觸發熔斷，將請求快速降級（Fallback）至異步佇列，終端用戶感知延遲不超過 $200\text{ms}$。
+* **前置條件（Steady State）**：當前系統處於健康基準線（99.9% 請求延遲 ≤ 120ms，錯誤率 ≤ 0.01%）。
+* **擾動變量（Fault Injection）**：對 `Order-Service` 到 `Payment-Gateway` 的 gRPC 呼叫注入 350ms 的人工延遲。
+* **預期行為（Expected Behavior）**：`Order-Service` 的本機端斷路器應當在第 3 次超時後觸發熔斷，將請求快速降級（Fallback）至異步佇列，終端用戶感知延遲不超過 200ms。
 * **終止絆線（Abort Conditions）**：若全域 5xx 錯誤率上升超過 $0.5\%$，立刻硬性清除故障注入。
 
 如果實驗結果顯示斷路器並未按預期開啟，導致 `Order-Service` 的 Tomcat 執行緒池被瞬間佔滿，AI 代理會立即判定該服務存在**「隱性級聯雪崩風險」**，並自動定位到具體的 Helm Chart 或代碼配置，直接向開發團隊提交一個修正逾時與隔離艙（Bulkhead）設定的 Pull Request！

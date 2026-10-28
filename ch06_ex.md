@@ -243,7 +243,7 @@ $$\text{Authorization} = f(\text{Agent Level } L_n, \text{Action Risk Tier}, \te
 | :--- | :--- | :--- |
 | **L0 (Advisory)** | Diagnostics reports, log aggregation | Auto-granted; read-only access exclusively |
 | **L1 (Drafting)** | PR generation, mitigation templates | Emits drafts; requires human single-click approval in Backstage |
-| **L2 (Conditional)** | Pre-approved actions (e.g., stateless pod restart) | Auto-granted only if blast radius $\le 15\%$ and whitelisted; posts async notice |
+| **L2 (Conditional)** | Pre-approved actions (e.g., stateless pod restart) | Auto-granted only if blast radius ≤ 15% and whitelisted; posts async notice |
 | **L3 (High Autonomy)** | Cross-service shedding, traffic shift | **Dual-Key Interlock**: Requires programmatic co-signature from independent Safety Critic Agent |
 | **L4 (Full Autonomy)** | Adaptive topology rebalancing, chaos | Governed by platform tripwires; immediate fallback to L0 on anomaly |
 
@@ -346,7 +346,7 @@ Before enabling autonomous operations in production, platform teams should evalu
 | **Signal Plane** | Telemetry semantics & contextualization | Raw Prometheus metrics and flat text logs | OpenTelemetry standard; signals bound to Backstage Catalog ownership & topology |
 | **Reasoning Plane** | Decision structure & action bifurcation | Single prompt handles investigation and execution simultaneously | Strict separation of sub-3m mitigation vs. 15-30m fix; outputs strongly-typed JSON decisions |
 | **Execution Plane** | Governed action surface & verification | Agent uses raw `kubectl` or unconstrained bash scripts | Model Context Protocol (MCP) tools with built-in idempotency, TTLs, and symptom verification |
-| **Governance Plane** | Safety policy implementation | Natural language prompting (*"Please do not delete data"*) | Deterministic OPA / gateway code enforcing $\le 15\%$ blast radius and dynamic L0-L4 ladders |
+| **Governance Plane** | Safety policy implementation | Natural language prompting (*"Please do not delete data"*) | Deterministic OPA / gateway code enforcing ≤ 15% blast radius and dynamic L0-L4 ladders |
 
 ---
 

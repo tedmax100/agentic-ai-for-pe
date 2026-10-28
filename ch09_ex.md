@@ -52,9 +52,9 @@ flowchart TD
 ### Hypothesis-Driven over Random Disruption
 Before triggering an experiment, an AI agent must formalize and submit a structured scientific hypothesis:
 
-* **Steady State**: System operates within established baseline health (99.9% request latency $\le 120\text{ms}$, error rate $\le 0.01\%$).
-* **Fault Injection**: Introduce $350\text{ms}$ artificial latency to gRPC calls between `Order-Service` and `Payment-Gateway`.
-* **Expected Behavior**: The local circuit breaker on `Order-Service` trips after 3 consecutive timeouts, gracefully falling back to an asynchronous queue with user-perceived latency remaining under $200\text{ms}$.
+* **Steady State**: System operates within established baseline health (99.9% request latency ≤ 120ms, error rate ≤ 0.01%).
+* **Fault Injection**: Introduce 350ms artificial latency to gRPC calls between `Order-Service` and `Payment-Gateway`.
+* **Expected Behavior**: The local circuit breaker on `Order-Service` trips after 3 consecutive timeouts, gracefully falling back to an asynchronous queue with user-perceived latency remaining under 200ms.
 * **Abort Conditions**: If the global 5xx error rate spikes by more than $0.5\%$, all injected faults are instantly purged.
 
 If the experiment reveals that the circuit breaker failed to open—causing `Order-Service` thread pools to saturate and block upstream ingress—the AI agent identifies an **unhandled cascading failure risk**. It immediately localizes the issue within Helm charts or application code, opening an automated Pull Request to tune timeouts and configure bulkheads.

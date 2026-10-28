@@ -81,7 +81,7 @@ flowchart LR
 * **Key Actions**:
   1. Adopt CNCF OpenChoreo to physically decouple infrastructure into developer and platform control planes, shielding raw clusters from agents.
   2. Encapsulate operational runbooks into standard Model Context Protocol (MCP) servers, backed by deterministic `AutonomyPolicyEngine` middleware.
-  3. Authorize **L1 (PR drafting)** and **L2 (conditional healing)** capabilities, strictly capping blast radius impact to $\le 15\%$ of running instances.
+  3. Authorize **L1 (PR drafting)** and **L2 (conditional healing)** capabilities, strictly capping blast radius impact to ≤ 15% of running instances.
 
 ### Phase 4: Day 3 — Cognitive Antifragile Platform (Proactive Hardening & Simulation)
 
