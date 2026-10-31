@@ -471,7 +471,7 @@ flowchart TD
     TokenVal --> Coordinator
     Coordinator --> GuardrailHook
     GuardrailHook <-->|動態校驗准入清單| Backstage
-    GuardrailHook <-->|"政策決策 (PDP)"| OPA
+    GuardrailHook <-->|"政策決策 - PDP"| OPA
     GuardrailHook -->|密碼學記錄| AuditChainer
     
     GuardrailHook -->|放行唯讀探查| K8sMCP
