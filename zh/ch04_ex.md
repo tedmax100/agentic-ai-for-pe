@@ -35,7 +35,7 @@ flowchart TD
     subgraph AREShift["ARE 核心典範轉移：決策重心的遷移"]
         direction TB
         HumanRole["人類工程師移至『迴圈之上 (Above-the-loop)』<br/>定義意圖、劃定自主邊界、審計系統決策品質"]
-        AgentCore["AI 代理處於『迴圈之中 (In-the-loop)』<br/>以機器速度執行 DRAL 閉環 (偵測 ➔ 推理 ➔ 行動 ➔ 學習)"]
+        AgentCore["AI 代理處於『迴圈之中 (In-the-loop)』<br/>以全自動高頻節奏執行 DRAL 閉環 (偵測 ➔ 推理 ➔ 行動 ➔ 學習)"]
         HumanRole -->|設定原則與約束| AgentCore
         AgentCore -->|反饋決策軌跡與洞察| HumanRole
     end
